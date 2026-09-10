@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
@@ -179,8 +180,8 @@ export default function GamesPage() {
           <p className="mt-3 max-w-2xl text-slate-400">
             Browse your filtered online
             game history, sort by any
-            column, and open individual
-            MLB The Show game pages.
+            column, and drill into locally
+            stored box scores and game logs.
           </p>
         </div>
 
@@ -409,22 +410,30 @@ export default function GamesPage() {
                       </td>
 
                       <td className="numeric divider-left font-mono text-xs">
-                        {config ? (
-                          <a
-                            href={buildGameUrl(
-                              game.id,
-                              config
-                            )}
-                            target="_blank"
-                            rel="noreferrer"
+                        <div className="flex items-center justify-end gap-3">
+                          <Link
+                            href={`/games/${encodeURIComponent(game.id)}`}
                             className="mlb-link"
-                            title="Open game page in a new tab"
+                            title="Open locally stored game details"
                           >
                             {game.id}
-                          </a>
-                        ) : (
-                          game.id
-                        )}
+                          </Link>
+
+                          {config && (
+                            <a
+                              href={buildGameUrl(
+                                game.id,
+                                config
+                              )}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] font-black uppercase tracking-wide text-slate-500 transition hover:text-blue-300"
+                              title="Open MLB The Show game page in a new tab"
+                            >
+                              MLBTS ↗
+                            </a>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )

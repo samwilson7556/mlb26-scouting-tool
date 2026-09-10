@@ -79,6 +79,89 @@ export type GamesResponse = {
 };
 
 
+export type GameLogRecord = {
+  game_id: string;
+  fetched_at: string | null;
+  api_status: string | null;
+  raw_game_log_json: string | null;
+  raw_text_log: string | null;
+};
+
+
+export type TeamBoxScore = {
+  id: number;
+  game_id: string;
+  team_id: string | null;
+  team_name: string | null;
+  runs: number | null;
+  hits: number | null;
+  errors: number | null;
+  batting_ab: number | null;
+  batting_r: number | null;
+  batting_h: number | null;
+  batting_rbi: number | null;
+  batting_bb: number | null;
+  batting_so: number | null;
+  pitching_ip: number | null;
+  pitching_outs: number | null;
+  pitching_h: number | null;
+  pitching_r: number | null;
+  pitching_er: number | null;
+  pitching_bb: number | null;
+  pitching_so: number | null;
+};
+
+
+export type PlayerBattingStat = {
+  id: number;
+  game_id: string;
+  team_id: string | null;
+  team_name: string | null;
+  player_name: string | null;
+  ab: number | null;
+  r: number | null;
+  h: number | null;
+  rbi: number | null;
+  bb: number | null;
+  so: number | null;
+  doubles: number | null;
+  triples: number | null;
+  hr: number | null;
+  sb: number | null;
+  cs: number | null;
+};
+
+
+export type PlayerPitchingStat = {
+  id: number;
+  game_id: string;
+  team_id: string | null;
+  team_name: string | null;
+  player_name: string | null;
+  ip: number | null;
+  pitching_outs: number | null;
+  h: number | null;
+  r: number | null;
+  er: number | null;
+  bb: number | null;
+  so: number | null;
+  win: number | null;
+  loss: number | null;
+  save: number | null;
+};
+
+
+export type GameDetailResponse = {
+  game: GameSummary & {
+    raw_game_history_json?: string | null;
+  };
+  game_log: GameLogRecord | null;
+  team_box_scores: TeamBoxScore[];
+  batting_stats: PlayerBattingStat[];
+  pitching_stats: PlayerPitchingStat[];
+};
+
+
 export type OpponentSummary = {
   opponent_name: string;
   opponent_team_name: string | null;
@@ -249,6 +332,15 @@ export async function getGames(params?: {
 
   return apiFetch<GamesResponse>(
     `/games${query ? `?${query}` : ""}`
+  );
+}
+
+
+export async function getGameDetail(
+  gameId: string
+): Promise<GameDetailResponse> {
+  return apiFetch<GameDetailResponse>(
+    `/games/${encodeURIComponent(gameId)}`
   );
 }
 
