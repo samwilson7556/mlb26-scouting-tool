@@ -179,8 +179,8 @@ export default function SyncPage() {
         <SyncCard
           title="Sync Logs"
           description={
-            "Fetch game logs only for stored games that "
-            + "have never received a game-log API response."
+            "Fetch logs for games with no stored response "
+            + "and retry generic MLBTS API errors."
           }
           buttonLabel="Sync Logs"
           running={
@@ -483,11 +483,10 @@ function LogSummary({
         ) : (
           <span>
             Successful logs are preserved
-            permanently. MLBTS identity
-            mismatches and other API
-            responses are recorded so they
-            are not retried automatically
-            on every sync.
+            permanently. Identity mismatches
+            and game-not-found responses are
+            terminal; generic API errors can
+            be retried on a later sync.
           </span>
         )}
 

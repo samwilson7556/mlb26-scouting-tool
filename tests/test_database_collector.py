@@ -297,13 +297,12 @@ class UnfetchedGameTests(
             [],
         )
 
-    def test_error_log_is_not_retried_automatically(
+    def insert_game_log_status(
         self,
-    ):
-        self.insert_game(
-            "game-1"
-        )
-
+        game_id: str,
+        status: str,
+        payload: dict,
+    ) -> None:
         self.conn.execute(
             """
             INSERT INTO game_logs (
@@ -316,22 +315,33 @@ class UnfetchedGameTests(
             VALUES (?, ?, ?, ?, ?)
             """,
             (
-                "game-1",
+                game_id,
                 "2026-01-01 12:01:00",
-                "identity_mismatch",
-                json.dumps(
-                    {
-                        "error": (
-                            "Username and platform "
-                            "do not match the game record."
-                        )
-                    }
-                ),
+                status,
+                json.dumps(payload),
                 "",
             ),
         )
 
         self.conn.commit()
+
+    def test_identity_mismatch_is_not_retried_automatically(
+        self,
+    ):
+        self.insert_game(
+            "game-1"
+        )
+
+        self.insert_game_log_status(
+            "game-1",
+            "identity_mismatch",
+            {
+                "error": (
+                    "Username and platform "
+                    "do not match the game record."
+                )
+            },
+        )
 
         ids = get_unfetched_game_ids(
             self.conn
@@ -340,6 +350,56 @@ class UnfetchedGameTests(
         self.assertEqual(
             ids,
             [],
+        )
+
+    def test_not_found_is_not_retried_automatically(
+        self,
+    ):
+        self.insert_game(
+            "game-1"
+        )
+
+        self.insert_game_log_status(
+            "game-1",
+            "not_found",
+            {
+                "error": "Game not found"
+            },
+        )
+
+        ids = get_unfetched_game_ids(
+            self.conn
+        )
+
+        self.assertEqual(
+            ids,
+            [],
+        )
+
+    def test_generic_api_error_is_retried_automatically(
+        self,
+    ):
+        self.insert_game(
+            "game-1"
+        )
+
+        self.insert_game_log_status(
+            "game-1",
+            "api_error",
+            {
+                "error": (
+                    "Unexpected API problem"
+                )
+            },
+        )
+
+        ids = get_unfetched_game_ids(
+            self.conn
+        )
+
+        self.assertEqual(
+            ids,
+            ["game-1"],
         )
 
 

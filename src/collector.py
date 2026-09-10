@@ -324,10 +324,13 @@ def get_unfetched_game_ids(
     conn: sqlite3.Connection,
 ) -> List[str]:
     """
-    Return games that have never received a game-log API result.
+    Return games that need a game-log request.
 
-    A stored error response counts as fetched. This prevents known MLBTS
-    historical-record failures from being requested again on every sync.
+    Games with no stored response are eligible. Generic api_error responses
+    are also retryable because they may represent transient MLBTS failures.
+
+    Successful logs, identity mismatches, and game-not-found responses are
+    treated as terminal and are not requested again automatically.
     """
     rows = conn.execute(
         """
@@ -336,6 +339,7 @@ def get_unfetched_game_ids(
         LEFT JOIN game_logs AS gl
             ON g.id = gl.game_id
         WHERE gl.game_id IS NULL
+           OR gl.api_status = 'api_error'
         ORDER BY g.display_date DESC
         """
     ).fetchall()

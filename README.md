@@ -318,9 +318,9 @@ is stored as:
 identity_mismatch
 ```
 
-Once an API response has been recorded for a game, normal sync operations do not repeatedly request that same game.
+Normal sync operations treat successful logs, `identity_mismatch`, and `not_found` as terminal results and do not repeatedly request those games.
 
-Network or request failures are different. Because no API result was successfully received, those games remain eligible for a later retry.
+Generic `api_error` responses are retryable on a later sync because they may represent a transient MLBTS problem. Network or request failures are also retryable because no API result was successfully received.
 
 ### Successful Log Preservation
 
