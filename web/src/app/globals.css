@@ -1,0 +1,269 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --app-font:
+    var(--font-inter), Inter, ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #020617;
+  font-family: var(--app-font);
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 35rem),
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.08), transparent 32rem),
+    #020617;
+  color: #e5e7eb;
+  font-family: var(--app-font);
+  font-feature-settings:
+    "cv02",
+    "cv03",
+    "cv04",
+    "cv11";
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.card {
+  border: 1px solid rgb(30 41 59 / 0.9);
+  background: rgb(15 23 42 / 0.86);
+  border-radius: 1.25rem;
+  padding: 1.25rem;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.22);
+}
+
+.input {
+  width: 100%;
+  border-radius: 0.85rem;
+  border: 1px solid rgb(51 65 85);
+  background: rgb(15 23 42);
+  padding: 0.75rem 1rem;
+  color: white;
+  outline: none;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
+}
+
+.input:focus {
+  border-color: rgb(59 130 246);
+  box-shadow: 0 0 0 3px rgb(59 130 246 / 0.18);
+}
+
+.button {
+  border-radius: 0.85rem;
+  background: rgb(37 99 235);
+  color: white;
+  padding: 0.75rem 1rem;
+  font-weight: 700;
+  transition:
+    background-color 150ms ease,
+    transform 150ms ease;
+}
+
+.button:hover {
+  background: rgb(29 78 216);
+}
+
+.button:active {
+  transform: translateY(1px);
+}
+
+.button-secondary {
+  border-radius: 0.85rem;
+  background: rgb(51 65 85);
+  color: white;
+  padding: 0.75rem 1rem;
+  font-weight: 700;
+  transition:
+    background-color 150ms ease,
+    transform 150ms ease;
+}
+
+.button-secondary:hover {
+  background: rgb(71 85 105);
+}
+
+.button-secondary:active {
+  transform: translateY(1px);
+}
+
+/* MLB-style table helpers */
+
+.mlb-table-wrap {
+  overflow-x: auto;
+  border-radius: 1rem;
+  background: #020617;
+}
+
+.mlb-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: #020617;
+  color: #f8fafc;
+  font-size: 0.8125rem;
+  font-family: var(--app-font);
+}
+
+.mlb-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #020617;
+  border-bottom: 1px solid rgb(148 163 184 / 0.7);
+  color: #cbd5e1;
+  font-size: 0.6875rem;
+  font-weight: 900;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.mlb-table th,
+.mlb-table td {
+  padding: 0.72rem 0.85rem;
+  vertical-align: middle;
+}
+
+.mlb-table tbody td {
+  border-bottom: 1px solid rgb(30 41 59 / 0.68);
+  font-weight: 750;
+}
+
+.mlb-table tbody tr {
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.mlb-table tbody tr:hover {
+  background: rgb(15 23 42 / 0.95);
+}
+
+.mlb-table .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.mlb-table .center {
+  text-align: center;
+}
+
+.mlb-table .primary {
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.mlb-table .secondary {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.mlb-table .divider-left {
+  border-left: 1px solid rgb(148 163 184 / 0.35);
+}
+
+.mlb-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 0.45rem;
+  padding: 0.25rem 0.35rem;
+  color: inherit;
+  font: inherit;
+  font-weight: 900;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.mlb-sort-button:hover {
+  background: rgb(30 41 59 / 0.75);
+  color: white;
+}
+
+.mlb-sort-active {
+  color: #93c5fd;
+}
+
+.mlb-link {
+  color: #93c5fd;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.mlb-link:hover {
+  color: #bfdbfe;
+  text-decoration: underline;
+}
+
+.result-win {
+  display: inline-flex;
+  min-width: 3.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.35rem;
+  background: rgb(16 185 129 / 0.16);
+  color: #6ee7b7;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+}
+
+.result-loss {
+  display: inline-flex;
+  min-width: 3.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.35rem;
+  background: rgb(239 68 68 / 0.16);
+  color: #fca5a5;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+}
+
+.result-na {
+  display: inline-flex;
+  min-width: 3.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.35rem;
+  background: rgb(51 65 85 / 0.65);
+  color: #94a3b8;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+}

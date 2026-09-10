@@ -1,0 +1,36 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment files
+.env
+.env.*
+!.env.example
+web/.env.local
+web/.env.*.local
+
+# Local data/database/log exports
+data/mlb26_games.sqlite3
+data/*.sqlite3
+data/raw_game_logs/
+data/exports/
+*.db
+*.sqlite
+*.sqlite3
+
+# Node / Next.js
+web/node_modules/
+web/.next/
+web/out/
+web/dist/
+web/.turbo/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
