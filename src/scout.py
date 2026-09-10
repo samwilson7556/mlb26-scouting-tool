@@ -90,6 +90,55 @@ def get_runs_for_configured_user(
     return None, None
 
 
+def get_run_averages_for_configured_user(
+    games: List[Dict[str, Any]],
+) -> tuple[float | None, float | None]:
+    """
+    Calculate runs scored/allowed using the same MLBTS side-attribution rules
+    used everywhere else in the application.
+
+    Games whose user side cannot be identified are ignored.
+    """
+    user_runs: List[int] = []
+    opponent_runs: List[int] = []
+
+    for game in games:
+        runs_for, runs_against = (
+            get_runs_for_configured_user(
+                game
+            )
+        )
+
+        if (
+            runs_for is None
+            or runs_against is None
+        ):
+            continue
+
+        user_runs.append(
+            runs_for
+        )
+        opponent_runs.append(
+            runs_against
+        )
+
+    if not user_runs:
+        return None, None
+
+    return (
+        round(
+            sum(user_runs)
+            / len(user_runs),
+            2,
+        ),
+        round(
+            sum(opponent_runs)
+            / len(opponent_runs),
+            2,
+        ),
+    )
+
+
 def scout_local_opponent(
     conn: sqlite3.Connection,
     opponent_username: str,
@@ -135,41 +184,18 @@ def scout_local_opponent(
         if game["user_result"] == "L"
     )
 
-    your_runs: List[int] = []
-    opponent_runs: List[int] = []
-
-    for game in games_list:
-        user_runs, other_runs = (
-            get_runs_for_configured_user(
-                game
-            )
-        )
-
-        if (
-            user_runs is not None
-            and other_runs is not None
-        ):
-            your_runs.append(
-                user_runs
-            )
-
-            opponent_runs.append(
-                other_runs
-            )
-
-    avg_runs_scored = (
-        sum(your_runs)
-        / len(your_runs)
-        if your_runs
-        else 0
+    (
+        avg_runs_scored,
+        avg_runs_allowed,
+    ) = get_run_averages_for_configured_user(
+        games_list
     )
 
-    avg_runs_allowed = (
-        sum(opponent_runs)
-        / len(opponent_runs)
-        if opponent_runs
-        else 0
-    )
+    if avg_runs_scored is None:
+        avg_runs_scored = 0
+
+    if avg_runs_allowed is None:
+        avg_runs_allowed = 0
 
     return {
         "opponent": opponent_username,

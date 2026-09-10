@@ -3,6 +3,8 @@ import argparse
 from rich.console import Console
 
 from .collector import (
+    backfill_missing_pitching_outs,
+    reparse_stored_game_logs,
     sync_game_history,
     sync_game_logs,
 )
@@ -57,6 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
             "sync-history",
             "sync-logs",
             "sync-all",
+            "reparse-logs",
             "opponents",
             "scout",
             "live-scout",
@@ -150,12 +153,59 @@ def main() -> None:
     try:
         init_db(conn)
 
+        if args.command != "reparse-logs":
+            backfill_summary = (
+                backfill_missing_pitching_outs(
+                    conn
+                )
+            )
+
+            if (
+                backfill_summary[
+                    "reparsed"
+                ]
+                > 0
+            ):
+                console.print(
+                    f"[green]"
+                    f"Backfilled pitching outs "
+                    f"from "
+                    f"{backfill_summary['reparsed']} "
+                    f"stored game log(s)."
+                    f"[/green]"
+                )
+
         if args.command == "init":
             console.print(
                 f"[green]"
                 f"Database initialized:"
                 f"[/green] "
                 f"{DB_PATH}"
+            )
+
+        elif args.command == "reparse-logs":
+            summary = (
+                reparse_stored_game_logs(
+                    conn
+                )
+            )
+
+            console.print(
+                "[bold]"
+                "Stored game-log reparse summary"
+                "[/bold]"
+            )
+            console.print(
+                f"Found: "
+                f"{summary['found']}"
+            )
+            console.print(
+                f"Reparsed: "
+                f"{summary['reparsed']}"
+            )
+            console.print(
+                f"Failed: "
+                f"{summary['failed']}"
             )
 
         elif args.command == "sync-history":

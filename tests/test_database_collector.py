@@ -6,7 +6,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.collector import (
+    backfill_missing_pitching_outs,
     classify_game_log_response,
+    get_game_ids_needing_pitching_outs_backfill,
     get_unfetched_game_ids,
     save_box_score_sections,
     save_game_log,
@@ -677,6 +679,127 @@ class BoxScoreParsingTests(
         self.assertEqual(
             rows[0]["pitching_outs"],
             8,
+        )
+
+
+class PitchingOutsBackfillTests(
+    TemporaryDatabaseTestCase
+):
+    def build_successful_game_log(
+        self,
+    ):
+        return {
+            "game": [
+                [
+                    "box_score",
+                    [
+                        {
+                            "team_id": "123",
+                            "team_name": "Test Team",
+                            "r": "3",
+                            "h": "7",
+                            "e": "0",
+                            "123": {
+                                "batting_totals": {},
+                                "pitching_totals": {
+                                    "ip": "5.2",
+                                },
+                                "batting_stats": [],
+                                "pitching_stats": [
+                                    {
+                                        "player_name": "Test Pitcher",
+                                        "ip": "5.2",
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                ]
+            ]
+        }
+
+    def test_backfill_reparses_legacy_rows_without_network(
+        self,
+    ):
+        self.insert_game("game-1")
+
+        save_game_log(
+            self.conn,
+            "game-1",
+            self.build_successful_game_log(),
+        )
+
+        self.conn.execute(
+            """
+            UPDATE team_box_scores
+            SET pitching_outs = NULL
+            WHERE game_id = ?
+            """,
+            ("game-1",),
+        )
+        self.conn.execute(
+            """
+            UPDATE player_pitching_stats
+            SET pitching_outs = NULL
+            WHERE game_id = ?
+            """,
+            ("game-1",),
+        )
+        self.conn.commit()
+
+        self.assertEqual(
+            get_game_ids_needing_pitching_outs_backfill(
+                self.conn
+            ),
+            ["game-1"],
+        )
+
+        with patch("src.collector.fetch_game_log") as network_fetch:
+            summary = backfill_missing_pitching_outs(
+                self.conn
+            )
+
+        network_fetch.assert_not_called()
+        self.assertEqual(
+            summary,
+            {"found": 1, "reparsed": 1, "failed": 0},
+        )
+
+        team_row = self.conn.execute(
+            "SELECT pitching_outs FROM team_box_scores WHERE game_id = ?",
+            ("game-1",),
+        ).fetchone()
+        pitcher_row = self.conn.execute(
+            "SELECT pitching_outs FROM player_pitching_stats WHERE game_id = ?",
+            ("game-1",),
+        ).fetchone()
+
+        self.assertEqual(team_row["pitching_outs"], 17)
+        self.assertEqual(pitcher_row["pitching_outs"], 17)
+
+    def test_completed_rows_do_not_need_backfill(
+        self,
+    ):
+        self.insert_game("game-1")
+        save_game_log(
+            self.conn,
+            "game-1",
+            self.build_successful_game_log(),
+        )
+
+        self.assertEqual(
+            get_game_ids_needing_pitching_outs_backfill(
+                self.conn
+            ),
+            [],
+        )
+
+        summary = backfill_missing_pitching_outs(
+            self.conn
+        )
+        self.assertEqual(
+            summary,
+            {"found": 0, "reparsed": 0, "failed": 0},
         )
 
 

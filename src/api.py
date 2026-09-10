@@ -1,11 +1,16 @@
 import sqlite3
+from contextlib import asynccontextmanager
 from typing import Any, Dict, Generator, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .collector import sync_game_history, sync_game_logs
+from .collector import (
+    backfill_missing_pitching_outs,
+    sync_game_history,
+    sync_game_logs,
+)
 from .config import (
     DB_PATH,
     MODE,
@@ -17,7 +22,33 @@ from .live_scout import (
     LiveScoutConfig,
     build_live_scout_report,
 )
-from .scout import scout_local_opponent
+from .scout import (
+    get_run_averages_for_configured_user,
+    scout_local_opponent,
+)
+
+
+@asynccontextmanager
+async def lifespan(
+    _app: FastAPI,
+):
+    """
+    Apply local database migrations once when the API process starts.
+
+    Legacy pitching_outs values are rebuilt only from already-stored
+    successful raw game logs; no MLBTS requests are made here.
+    """
+    conn = connect_db(DB_PATH)
+
+    try:
+        init_db(conn)
+        backfill_missing_pitching_outs(
+            conn
+        )
+    finally:
+        conn.close()
+
+    yield
 
 
 app = FastAPI(
@@ -27,6 +58,7 @@ app = FastAPI(
         "game logs, and scouting."
     ),
     version="0.2.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -156,34 +188,26 @@ def get_dashboard(
         """
     ).fetchone()
 
-    avg_row = conn.execute(
+    average_game_rows = conn.execute(
         """
         SELECT
-            AVG(
-                CASE
-                    WHEN LOWER(home_name) = LOWER(?)
-                    THEN home_runs
-                    WHEN LOWER(away_name) = LOWER(?)
-                    THEN away_runs
-                END
-            ) AS avg_runs_scored,
-            AVG(
-                CASE
-                    WHEN LOWER(home_name) = LOWER(?)
-                    THEN away_runs
-                    WHEN LOWER(away_name) = LOWER(?)
-                    THEN home_runs
-                END
-            ) AS avg_runs_allowed
+            home_name,
+            away_name,
+            home_runs,
+            away_runs
         FROM games
-        """,
-        (
-            USERNAME,
-            USERNAME,
-            USERNAME,
-            USERNAME,
-        ),
-    ).fetchone()
+        """
+    ).fetchall()
+
+    (
+        avg_runs_scored,
+        avg_runs_allowed,
+    ) = get_run_averages_for_configured_user(
+        [
+            row_to_dict(row)
+            for row in average_game_rows
+        ]
+    )
 
     recent_games = conn.execute(
         """
@@ -228,30 +252,10 @@ def get_dashboard(
         },
         "averages": {
             "runs_scored": (
-                round(
-                    avg_row[
-                        "avg_runs_scored"
-                    ],
-                    2,
-                )
-                if avg_row[
-                    "avg_runs_scored"
-                ]
-                is not None
-                else None
+                avg_runs_scored
             ),
             "runs_allowed": (
-                round(
-                    avg_row[
-                        "avg_runs_allowed"
-                    ],
-                    2,
-                )
-                if avg_row[
-                    "avg_runs_allowed"
-                ]
-                is not None
-                else None
+                avg_runs_allowed
             ),
         },
         "recent_games": [
@@ -476,23 +480,7 @@ def get_opponents(
             ) AS your_losses,
             MAX(
                 display_date
-            ) AS last_played,
-            AVG(
-                CASE
-                    WHEN LOWER(home_name) = LOWER(?)
-                    THEN home_runs
-                    WHEN LOWER(away_name) = LOWER(?)
-                    THEN away_runs
-                END
-            ) AS avg_runs_scored,
-            AVG(
-                CASE
-                    WHEN LOWER(home_name) = LOWER(?)
-                    THEN away_runs
-                    WHEN LOWER(away_name) = LOWER(?)
-                    THEN home_runs
-                END
-            ) AS avg_runs_allowed
+            ) AS last_played
         FROM games
         WHERE opponent_name IS NOT NULL
           AND opponent_name != ''
@@ -501,13 +489,7 @@ def get_opponents(
             opponent_team_name
         ORDER BY
             last_played DESC
-        """,
-        (
-            USERNAME,
-            USERNAME,
-            USERNAME,
-            USERNAME,
-        ),
+        """
     ).fetchall()
 
     opponents = []
@@ -515,35 +497,40 @@ def get_opponents(
     for row in rows:
         item = row_to_dict(row)
 
-        if (
-            item[
-                "avg_runs_scored"
-            ]
-            is not None
-        ):
-            item[
-                "avg_runs_scored"
-            ] = round(
-                item[
-                    "avg_runs_scored"
-                ],
-                2,
-            )
+        opponent_games = conn.execute(
+            """
+            SELECT
+                home_name,
+                away_name,
+                home_runs,
+                away_runs
+            FROM games
+            WHERE opponent_name = ?
+              AND opponent_team_name IS ?
+            """,
+            (
+                item["opponent_name"],
+                item["opponent_team_name"],
+            ),
+        ).fetchall()
 
-        if (
-            item[
-                "avg_runs_allowed"
+        (
+            avg_runs_scored,
+            avg_runs_allowed,
+        ) = get_run_averages_for_configured_user(
+            [
+                row_to_dict(game)
+                for game in opponent_games
             ]
-            is not None
-        ):
-            item[
-                "avg_runs_allowed"
-            ] = round(
-                item[
-                    "avg_runs_allowed"
-                ],
-                2,
-            )
+        )
+
+        item[
+            "avg_runs_scored"
+        ] = avg_runs_scored
+
+        item[
+            "avg_runs_allowed"
+        ] = avg_runs_allowed
 
         opponents.append(item)
 

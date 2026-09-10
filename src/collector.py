@@ -988,23 +988,92 @@ def save_box_score_sections(
             )
 
 
+def get_game_ids_needing_pitching_outs_backfill(
+    conn: sqlite3.Connection,
+) -> List[str]:
+    """
+    Return successful stored logs whose parsed pitching rows predate
+    the pitching_outs migration.
+    """
+    rows = conn.execute(
+        """
+        SELECT DISTINCT
+            gl.game_id
+        FROM game_logs AS gl
+        WHERE gl.api_status = 'ok'
+          AND (
+              EXISTS (
+                  SELECT 1
+                  FROM team_box_scores AS tbs
+                  WHERE tbs.game_id = gl.game_id
+                    AND tbs.pitching_ip IS NOT NULL
+                    AND tbs.pitching_outs IS NULL
+              )
+              OR EXISTS (
+                  SELECT 1
+                  FROM player_pitching_stats AS pps
+                  WHERE pps.game_id = gl.game_id
+                    AND pps.ip IS NOT NULL
+                    AND pps.pitching_outs IS NULL
+              )
+          )
+        ORDER BY gl.game_id
+        """
+    ).fetchall()
+
+    return [
+        row["game_id"]
+        for row in rows
+    ]
+
+
 def reparse_stored_game_logs(
     conn: sqlite3.Connection,
+    game_ids: Optional[List[str]] = None,
 ) -> Dict[str, int]:
     """
     Rebuild parsed statistics using already-stored successful raw game logs.
 
+    If game_ids is provided, only those successful stored logs are reparsed.
     This function performs no network requests.
     """
+    params: List[Any] = []
+    where_sql = (
+        "WHERE api_status = 'ok'"
+    )
+
+    if game_ids is not None:
+        if not game_ids:
+            return {
+                "found": 0,
+                "reparsed": 0,
+                "failed": 0,
+            }
+
+        placeholders = ", ".join(
+            "?"
+            for _ in game_ids
+        )
+
+        where_sql += (
+            f" AND game_id IN "
+            f"({placeholders})"
+        )
+
+        params.extend(
+            game_ids
+        )
+
     rows = conn.execute(
-        """
+        f"""
         SELECT
             game_id,
             raw_game_log_json
         FROM game_logs
-        WHERE api_status = 'ok'
+        {where_sql}
         ORDER BY game_id
-        """
+        """,
+        params,
     ).fetchall()
 
     summary = {
@@ -1054,6 +1123,27 @@ def reparse_stored_game_logs(
     conn.commit()
 
     return summary
+
+
+def backfill_missing_pitching_outs(
+    conn: sqlite3.Connection,
+) -> Dict[str, int]:
+    """
+    Reparse only legacy successful game logs whose parsed pitching data has
+    innings pitched but no pitching_outs value.
+
+    No MLBTS requests are made; the stored raw JSON is the source of truth.
+    """
+    game_ids = (
+        get_game_ids_needing_pitching_outs_backfill(
+            conn
+        )
+    )
+
+    return reparse_stored_game_logs(
+        conn,
+        game_ids=game_ids,
+    )
 
 
 def sync_game_history(

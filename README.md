@@ -73,7 +73,7 @@ Run the test suite with:
 python -m unittest discover -s tests -v
 ```
 
-The current automated suite contains 43 tests.
+The current automated suite contains 47 tests.
 
 ---
 
@@ -426,7 +426,7 @@ Example:
 = 4.76 ERA
 ```
 
-Existing databases are automatically migrated to add the `pitching_outs` columns when necessary.
+Existing databases are automatically migrated to add the `pitching_outs` columns when necessary. On application startup, legacy parsed pitching rows that have innings pitched but no outs value are rebuilt from already-stored successful raw game logs. That backfill does not make MLBTS network requests.
 
 ---
 
@@ -576,6 +576,14 @@ python -m src.main sync-logs
 ```
 
 This retrieves game logs for stored games that do not yet have a recorded game-log API result.
+
+### Reparse Stored Game Logs
+
+```bash
+python -m src.main reparse-logs
+```
+
+This rebuilds parsed box-score data from all successful raw game logs already stored in SQLite. It performs no MLBTS network requests and is useful after parser or schema changes.
 
 ### Sync Everything
 
