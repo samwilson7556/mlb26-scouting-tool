@@ -204,6 +204,43 @@ export type GameLogSyncSummary = {
 };
 
 
+export type SyncType =
+  | "history"
+  | "logs"
+  | "all";
+
+
+export type SyncJob = {
+  id: string;
+  type: SyncType;
+  status:
+    | "queued"
+    | "running"
+    | "completed"
+    | "failed";
+  phase:
+    | "queued"
+    | "history"
+    | "logs"
+    | "complete";
+  message: string;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  human_games: number | null;
+  progress_current: number;
+  progress_total: number;
+  current_game_id: string | null;
+  log_summary: GameLogSyncSummary | null;
+  error: string | null;
+};
+
+
+export type SyncJobEnvelope = {
+  job: SyncJob | null;
+};
+
+
 export type SyncHistoryResponse = {
   status: string;
   message: string;
@@ -400,6 +437,36 @@ export async function getLocalOpponent(
 ): Promise<LocalOpponentResponse> {
   return apiFetch<LocalOpponentResponse>(
     `/opponents/${encodeURIComponent(username)}`
+  );
+}
+
+
+export async function startSyncJob(
+  type: SyncType
+): Promise<SyncJob> {
+  return apiFetch<SyncJob>(
+    "/sync/jobs",
+    {
+      method: "POST",
+      body: JSON.stringify({ type }),
+    }
+  );
+}
+
+
+export async function getSyncJob(
+  jobId: string
+): Promise<SyncJob> {
+  return apiFetch<SyncJob>(
+    `/sync/jobs/${encodeURIComponent(jobId)}`
+  );
+}
+
+
+export async function getLatestSyncJob(
+): Promise<SyncJobEnvelope> {
+  return apiFetch<SyncJobEnvelope>(
+    "/sync/jobs/latest"
   );
 }
 

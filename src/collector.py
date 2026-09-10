@@ -2,7 +2,7 @@ import json
 import sqlite3
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 from rich.console import Console
@@ -1203,6 +1203,12 @@ def sync_game_history(
 
 def sync_game_logs(
     conn: sqlite3.Connection,
+    progress_callback: Optional[
+        Callable[
+            [Dict[str, Any]],
+            None,
+        ]
+    ] = None,
 ) -> Dict[str, int]:
     session = create_session()
 
@@ -1224,6 +1230,16 @@ def sync_game_logs(
         f"[bold]Game logs to fetch:[/bold] "
         f"{len(game_ids)}"
     )
+
+    if progress_callback:
+        progress_callback(
+            {
+                "current": 0,
+                "total": len(game_ids),
+                "game_id": None,
+                "summary": dict(summary),
+            }
+        )
 
     for index, game_id in enumerate(
         game_ids,
@@ -1272,6 +1288,16 @@ def sync_game_logs(
                     "[/yellow]"
                 )
 
+                if progress_callback:
+                    progress_callback(
+                        {
+                            "current": index,
+                            "total": len(game_ids),
+                            "game_id": game_id,
+                            "summary": dict(summary),
+                        }
+                    )
+
                 continue
 
             summary[status] += 1
@@ -1318,6 +1344,16 @@ def sync_game_logs(
                 f"Request failed for "
                 f"{game_id}: {exc}"
                 f"[/red]"
+            )
+
+        if progress_callback:
+            progress_callback(
+                {
+                    "current": index,
+                    "total": len(game_ids),
+                    "game_id": game_id,
+                    "summary": dict(summary),
+                }
             )
 
     console.print()

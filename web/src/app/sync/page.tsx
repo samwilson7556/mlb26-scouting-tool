@@ -1,99 +1,141 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import {
   GameLogSyncSummary,
-  syncAll,
-  syncHistory,
-  syncLogs,
+  SyncJob,
+  SyncType,
+  getLatestSyncJob,
+  getSyncJob,
+  startSyncJob,
 } from "@/lib/api";
 
 
-type SyncType =
-  | "history"
-  | "logs"
-  | "all";
-
-
-type SyncResult = {
-  type: SyncType;
-  message: string;
-  humanGames?: number;
-  logSummary?: GameLogSyncSummary;
-};
+const POLL_INTERVAL_MS = 1000;
 
 
 export default function SyncPage() {
-  const [loading, setLoading] =
-    useState<SyncType | null>(null);
+  const [job, setJob] =
+    useState<SyncJob | null>(null);
 
-  const [result, setResult] =
-    useState<SyncResult | null>(null);
+  const [starting, setStarting] =
+    useState<SyncType | null>(null);
 
   const [error, setError] =
     useState<string | null>(null);
 
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreLatestJob() {
+      try {
+        const response =
+          await getLatestSyncJob();
+
+        if (!cancelled) {
+          setJob(response.job);
+        }
+      } catch {
+        // The API may not be running yet. The
+        // page can still start a new sync later.
+      }
+    }
+
+    restoreLatestJob();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+
+  useEffect(() => {
+    if (
+      !job
+      || (
+        job.status !== "queued"
+        && job.status !== "running"
+      )
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const timer = window.setInterval(
+      async () => {
+        try {
+          const response =
+            await getSyncJob(job.id);
+
+          if (!cancelled) {
+            setJob(response);
+          }
+        } catch (err) {
+          if (!cancelled) {
+            setError(
+              err instanceof Error
+                ? err.message
+                : "Failed to refresh sync status."
+            );
+          }
+        }
+      },
+      POLL_INTERVAL_MS
+    );
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [job]);
+
+
   async function runSync(
     type: SyncType
   ) {
-    setLoading(type);
-    setResult(null);
+    setStarting(type);
     setError(null);
 
     try {
-      if (type === "history") {
-        const response =
-          await syncHistory();
-
-        setResult({
-          type,
-          message: response.message,
-          humanGames:
-            response.human_games,
-        });
-
-        return;
-      }
-
-      if (type === "logs") {
-        const response =
-          await syncLogs();
-
-        setResult({
-          type,
-          message: response.message,
-          logSummary:
-            response.summary,
-        });
-
-        return;
-      }
-
       const response =
-        await syncAll();
+        await startSyncJob(type);
 
-      setResult({
-        type,
-        message: response.message,
-        humanGames:
-          response.human_games,
-        logSummary:
-          response.log_summary,
-      });
-
+      setJob(response);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
           : "Unknown error"
       );
+
+      try {
+        const latest =
+          await getLatestSyncJob();
+
+        if (latest.job) {
+          setJob(latest.job);
+        }
+      } catch {
+        // Keep the original error.
+      }
     } finally {
-      setLoading(null);
+      setStarting(null);
     }
   }
+
+
+  const active =
+    job?.status === "queued"
+    || job?.status === "running";
+
+  const activeType =
+    active
+      ? job.type
+      : starting;
 
 
   return (
@@ -108,10 +150,9 @@ export default function SyncPage() {
         </h1>
 
         <p className="mt-3 max-w-2xl text-slate-400">
-          Update the local database with
-          your latest MLB The Show 26
-          online game history and game
-          logs.
+          Start a background sync and keep
+          using the app while MLB The Show
+          requests are processed.
         </p>
       </div>
 
@@ -125,10 +166,10 @@ export default function SyncPage() {
           }
           buttonLabel="Sync History"
           running={
-            loading === "history"
+            activeType === "history"
           }
           disabled={
-            loading !== null
+            active || starting !== null
           }
           onClick={() =>
             runSync("history")
@@ -143,10 +184,10 @@ export default function SyncPage() {
           }
           buttonLabel="Sync Logs"
           running={
-            loading === "logs"
+            activeType === "logs"
           }
           disabled={
-            loading !== null
+            active || starting !== null
           }
           onClick={() =>
             runSync("logs")
@@ -161,10 +202,10 @@ export default function SyncPage() {
           }
           buttonLabel="Sync All"
           running={
-            loading === "all"
+            activeType === "all"
           }
           disabled={
-            loading !== null
+            active || starting !== null
           }
           onClick={() =>
             runSync("all")
@@ -173,62 +214,26 @@ export default function SyncPage() {
       </div>
 
 
-      {loading && (
-        <div className="card mt-6">
-          <div className="text-sm font-bold text-white">
-            Sync in progress
-          </div>
-
-          <p className="mt-2 text-sm leading-relaxed text-slate-400">
-            MLB The Show requests are
-            intentionally paced. Keep this
-            page open until the operation
-            finishes.
-          </p>
-        </div>
+      {job && active && (
+        <SyncProgress job={job} />
       )}
 
 
-      {result && (
-        <div className="mt-6 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
-          <div className="border-b border-slate-800 bg-black px-6 py-5">
-            <div className="text-sm font-black uppercase tracking-wide text-green-400">
-              Sync Complete
-            </div>
+      {job?.status === "completed" && (
+        <SyncResult job={job} />
+      )}
 
-            <div className="mt-2 text-xl font-black text-white">
-              {result.message}
-            </div>
+
+      {job?.status === "failed" && (
+        <div className="card mt-6 border-red-500/20 text-red-400">
+          <div className="font-bold">
+            Sync failed
           </div>
 
-
-          {result.humanGames !==
-            undefined && (
-            <div className="border-b border-slate-800 px-6 py-5">
-              <div className="text-xs font-black uppercase tracking-wide text-slate-500">
-                Human Games
-              </div>
-
-              <div className="mt-1 text-3xl font-black text-white">
-                {result.humanGames}
-              </div>
-
-              <p className="mt-2 text-xs text-slate-500">
-                CPU games are excluded
-                from the local scouting
-                database.
-              </p>
-            </div>
-          )}
-
-
-          {result.logSummary && (
-            <LogSummary
-              summary={
-                result.logSummary
-              }
-            />
-          )}
+          <div className="mt-2 text-sm">
+            {job.error
+              || "The background sync failed."}
+          </div>
         </div>
       )}
 
@@ -236,7 +241,7 @@ export default function SyncPage() {
       {error && (
         <div className="card mt-6 border-red-500/20 text-red-400">
           <div className="font-bold">
-            Sync failed
+            Sync request error
           </div>
 
           <div className="mt-2 text-sm">
@@ -245,6 +250,143 @@ export default function SyncPage() {
         </div>
       )}
     </AppShell>
+  );
+}
+
+
+function SyncProgress({
+  job,
+}: {
+  job: SyncJob;
+}) {
+  const hasNumericProgress =
+    job.phase === "logs"
+    && job.progress_total > 0;
+
+  const percent =
+    hasNumericProgress
+      ? Math.min(
+          100,
+          Math.round(
+            (
+              job.progress_current
+              / job.progress_total
+            ) * 100
+          )
+        )
+      : 0;
+
+  return (
+    <div className="card mt-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="text-sm font-bold text-white">
+            Sync in progress
+          </div>
+
+          <p className="mt-1 text-sm text-slate-400">
+            {job.message}
+          </p>
+        </div>
+
+        <div className="text-xs font-black uppercase tracking-wide text-blue-300">
+          {formatPhase(job.phase)}
+        </div>
+      </div>
+
+      {hasNumericProgress ? (
+        <div className="mt-5">
+          <div className="mb-2 flex items-center justify-between text-xs font-bold text-slate-400">
+            <span>
+              {job.progress_current} of{" "}
+              {job.progress_total} logs
+            </span>
+
+            <span>{percent}%</span>
+          </div>
+
+          <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+            <div
+              className="h-full rounded-full bg-blue-500 transition-all duration-300"
+              style={{
+                width: `${percent}%`,
+              }}
+            />
+          </div>
+
+          {job.current_game_id && (
+            <div className="mt-3 font-mono text-xs text-slate-500">
+              Current game:{" "}
+              {job.current_game_id}
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="mt-4 text-xs leading-relaxed text-slate-500">
+          The background job is still
+          running. You can navigate away
+          from this page and return later;
+          the local API continues the sync.
+        </p>
+      )}
+
+      {job.log_summary && (
+        <div className="mt-5 border-t border-slate-800 pt-4">
+          <div className="text-xs text-slate-500">
+            Successful:{" "}
+            {job.log_summary.ok}
+            {" • "}Request failures:{" "}
+            {job.log_summary.request_failed}
+            {" • "}API errors:{" "}
+            {job.log_summary.api_error}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function SyncResult({
+  job,
+}: {
+  job: SyncJob;
+}) {
+  return (
+    <div className="mt-6 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
+      <div className="border-b border-slate-800 bg-black px-6 py-5">
+        <div className="text-sm font-black uppercase tracking-wide text-green-400">
+          Sync Complete
+        </div>
+
+        <div className="mt-2 text-xl font-black text-white">
+          {job.message}
+        </div>
+      </div>
+
+      {job.human_games !== null && (
+        <div className="border-b border-slate-800 px-6 py-5">
+          <div className="text-xs font-black uppercase tracking-wide text-slate-500">
+            Human Games
+          </div>
+
+          <div className="mt-1 text-3xl font-black text-white">
+            {job.human_games}
+          </div>
+
+          <p className="mt-2 text-xs text-slate-500">
+            CPU games are excluded from
+            the local scouting database.
+          </p>
+        </div>
+      )}
+
+      {job.log_summary && (
+        <LogSummary
+          summary={job.log_summary}
+        />
+      )}
+    </div>
   );
 }
 
@@ -275,7 +417,7 @@ function SyncCard({
       </p>
 
       <button
-        className="button mt-6"
+        className="button mt-6 disabled:cursor-not-allowed disabled:opacity-50"
         disabled={disabled}
         onClick={onClick}
       >
@@ -331,7 +473,6 @@ function LogSummary({
         />
       </div>
 
-
       <div className="border-t border-slate-800 px-6 py-4 text-sm text-slate-400">
         {summary.requested === 0 ? (
           <span>
@@ -381,4 +522,23 @@ function SummaryMetric({
       </div>
     </div>
   );
+}
+
+
+function formatPhase(
+  phase: SyncJob["phase"]
+): string {
+  if (phase === "history") {
+    return "Game History";
+  }
+
+  if (phase === "logs") {
+    return "Game Logs";
+  }
+
+  if (phase === "complete") {
+    return "Complete";
+  }
+
+  return "Queued";
 }

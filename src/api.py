@@ -1,6 +1,9 @@
 import sqlite3
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from threading import Lock, Thread
 from typing import Any, Dict, Generator, List, Optional
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -70,6 +73,12 @@ app.add_middleware(
 )
 
 
+class SyncJobRequest(BaseModel):
+    type: str = Field(
+        pattern="^(history|logs|all)$"
+    )
+
+
 class LiveScoutRequest(BaseModel):
     username: str
     platform: str = PLATFORM
@@ -89,6 +98,366 @@ class LiveScoutRequest(BaseModel):
         ge=1,
         le=10,
     )
+
+
+
+SyncType = str
+
+_sync_job_lock = Lock()
+_sync_jobs: Dict[str, Dict[str, Any]] = {}
+_active_sync_job_id: Optional[str] = None
+_latest_sync_job_id: Optional[str] = None
+
+
+def _utc_now() -> str:
+    return datetime.now(
+        timezone.utc
+    ).isoformat()
+
+
+def _copy_job(
+    job: Dict[str, Any],
+) -> Dict[str, Any]:
+    snapshot = dict(job)
+
+    if isinstance(
+        snapshot.get("log_summary"),
+        dict,
+    ):
+        snapshot["log_summary"] = dict(
+            snapshot["log_summary"]
+        )
+
+    return snapshot
+
+
+def _get_sync_job_snapshot(
+    job_id: str,
+) -> Optional[Dict[str, Any]]:
+    with _sync_job_lock:
+        job = _sync_jobs.get(job_id)
+
+        if job is None:
+            return None
+
+        return _copy_job(job)
+
+
+def _get_active_sync_job_snapshot(
+) -> Optional[Dict[str, Any]]:
+    with _sync_job_lock:
+        if not _active_sync_job_id:
+            return None
+
+        job = _sync_jobs.get(
+            _active_sync_job_id
+        )
+
+        if job is None:
+            return None
+
+        return _copy_job(job)
+
+
+def _get_latest_sync_job_snapshot(
+) -> Optional[Dict[str, Any]]:
+    with _sync_job_lock:
+        if not _latest_sync_job_id:
+            return None
+
+        job = _sync_jobs.get(
+            _latest_sync_job_id
+        )
+
+        if job is None:
+            return None
+
+        return _copy_job(job)
+
+
+def _update_sync_job(
+    job_id: str,
+    **updates: Any,
+) -> None:
+    with _sync_job_lock:
+        job = _sync_jobs.get(job_id)
+
+        if job is None:
+            return
+
+        job.update(updates)
+
+
+def _finish_active_sync_job(
+    job_id: str,
+) -> None:
+    global _active_sync_job_id
+
+    with _sync_job_lock:
+        if (
+            _active_sync_job_id
+            == job_id
+        ):
+            _active_sync_job_id = None
+
+
+def _run_sync_job(
+    job_id: str,
+    sync_type: SyncType,
+) -> None:
+    conn: Optional[
+        sqlite3.Connection
+    ] = None
+
+    _update_sync_job(
+        job_id,
+        status="running",
+        started_at=_utc_now(),
+        message="Starting sync...",
+    )
+
+    try:
+        conn = connect_db(DB_PATH)
+        init_db(conn)
+
+        human_games = None
+
+        if sync_type in (
+            "history",
+            "all",
+        ):
+            _update_sync_job(
+                job_id,
+                phase="history",
+                message=(
+                    "Fetching game history "
+                    "from MLB The Show..."
+                ),
+                current_game_id=None,
+                progress_current=0,
+                progress_total=0,
+            )
+
+            games = sync_game_history(
+                conn
+            )
+            human_games = len(games)
+
+            _update_sync_job(
+                job_id,
+                human_games=human_games,
+            )
+
+        if sync_type in (
+            "logs",
+            "all",
+        ):
+            _update_sync_job(
+                job_id,
+                phase="logs",
+                message=(
+                    "Fetching missing "
+                    "game logs..."
+                ),
+                current_game_id=None,
+                progress_current=0,
+                progress_total=0,
+            )
+
+            def on_progress(
+                progress: Dict[
+                    str,
+                    Any,
+                ],
+            ) -> None:
+                current = int(
+                    progress.get(
+                        "current",
+                        0,
+                    )
+                )
+                total = int(
+                    progress.get(
+                        "total",
+                        0,
+                    )
+                )
+
+                _update_sync_job(
+                    job_id,
+                    phase="logs",
+                    message=(
+                        f"Fetching game logs "
+                        f"({current}/{total})..."
+                        if total
+                        else (
+                            "No missing game "
+                            "logs to fetch."
+                        )
+                    ),
+                    current_game_id=(
+                        progress.get(
+                            "game_id"
+                        )
+                    ),
+                    progress_current=current,
+                    progress_total=total,
+                    log_summary=(
+                        progress.get(
+                            "summary"
+                        )
+                    ),
+                )
+
+            log_summary = sync_game_logs(
+                conn,
+                progress_callback=on_progress,
+            )
+
+            _update_sync_job(
+                job_id,
+                log_summary=log_summary,
+            )
+
+        if sync_type == "history":
+            message = (
+                "Game history synced."
+            )
+        elif sync_type == "logs":
+            message = (
+                "Game logs synced."
+            )
+        else:
+            message = (
+                "Game history and logs "
+                "synced."
+            )
+
+        _update_sync_job(
+            job_id,
+            status="completed",
+            phase="complete",
+            message=message,
+            current_game_id=None,
+            finished_at=_utc_now(),
+        )
+
+    except Exception as exc:
+        _update_sync_job(
+            job_id,
+            status="failed",
+            message="Sync failed.",
+            error=str(exc),
+            current_game_id=None,
+            finished_at=_utc_now(),
+        )
+
+    finally:
+        if conn is not None:
+            conn.close()
+
+        _finish_active_sync_job(
+            job_id
+        )
+
+
+def _start_sync_job(
+    sync_type: SyncType,
+) -> Dict[str, Any]:
+    global _active_sync_job_id
+    global _latest_sync_job_id
+
+    if sync_type not in (
+        "history",
+        "logs",
+        "all",
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid sync type.",
+        )
+
+    job_id = uuid4().hex
+
+    with _sync_job_lock:
+        if _active_sync_job_id:
+            active_job = (
+                _sync_jobs.get(
+                    _active_sync_job_id
+                )
+            )
+
+            if (
+                active_job
+                and active_job.get(
+                    "status"
+                )
+                in {
+                    "queued",
+                    "running",
+                }
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": (
+                            "A sync job is "
+                            "already running."
+                        ),
+                        "job_id": (
+                            _active_sync_job_id
+                        ),
+                    },
+                )
+
+        job = {
+            "id": job_id,
+            "type": sync_type,
+            "status": "queued",
+            "phase": "queued",
+            "message": "Sync queued.",
+            "created_at": _utc_now(),
+            "started_at": None,
+            "finished_at": None,
+            "human_games": None,
+            "progress_current": 0,
+            "progress_total": 0,
+            "current_game_id": None,
+            "log_summary": None,
+            "error": None,
+        }
+
+        _sync_jobs[job_id] = job
+        _active_sync_job_id = job_id
+        _latest_sync_job_id = job_id
+
+    worker = Thread(
+        target=_run_sync_job,
+        args=(
+            job_id,
+            sync_type,
+        ),
+        daemon=True,
+    )
+    worker.start()
+
+    snapshot = (
+        _get_sync_job_snapshot(
+            job_id
+        )
+    )
+
+    if snapshot is None:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Sync job could not "
+                "be created."
+            ),
+        )
+
+    return snapshot
+
 
 
 def get_conn() -> Generator[
@@ -551,6 +920,56 @@ def get_local_opponent(
         conn,
         username,
     )
+
+
+
+@app.post(
+    "/sync/jobs",
+    status_code=202,
+)
+def start_sync_job_endpoint(
+    request: SyncJobRequest,
+) -> Dict[str, Any]:
+    return _start_sync_job(
+        request.type
+    )
+
+
+@app.get("/sync/jobs/active")
+def get_active_sync_job_endpoint(
+) -> Dict[str, Any]:
+    return {
+        "job": (
+            _get_active_sync_job_snapshot()
+        ),
+    }
+
+
+@app.get("/sync/jobs/latest")
+def get_latest_sync_job_endpoint(
+) -> Dict[str, Any]:
+    return {
+        "job": (
+            _get_latest_sync_job_snapshot()
+        ),
+    }
+
+
+@app.get("/sync/jobs/{job_id}")
+def get_sync_job_endpoint(
+    job_id: str,
+) -> Dict[str, Any]:
+    job = _get_sync_job_snapshot(
+        job_id
+    )
+
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Sync job not found.",
+        )
+
+    return job
 
 
 @app.post("/sync/history")
