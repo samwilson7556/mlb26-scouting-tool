@@ -21,9 +21,9 @@ class UsernameParsingTests(unittest.TestCase):
     def test_clean_username_removes_style_suffix(self):
         self.assertEqual(
             clean_username(
-                "poopoopee155 ^b53^"
+                "test_player ^b53^"
             ),
-            "poopoopee155",
+            "test_player",
         )
 
     def test_clean_username_leaves_plain_name(self):
@@ -49,7 +49,7 @@ class CpuFilteringTests(unittest.TestCase):
             "home_full_name": "CPU",
             "away_full_name": "Hoosiers",
             "home_name": "CPU",
-            "away_name": "poopoopee155",
+            "away_name": "test_player",
         }
 
         self.assertTrue(
@@ -83,7 +83,7 @@ class UserSideTests(unittest.TestCase):
     def test_user_is_home(self):
         game = {
             "home_name": (
-                "poopoopee155 ^b53^"
+                "test_player ^b53^"
             ),
             "away_name": (
                 "Opponent123 ^b54^"
@@ -93,7 +93,7 @@ class UserSideTests(unittest.TestCase):
         self.assertEqual(
             get_user_side(
                 game,
-                "poopoopee155",
+                "test_player",
             ),
             "home",
         )
@@ -101,13 +101,13 @@ class UserSideTests(unittest.TestCase):
     def test_user_is_away(self):
         game = {
             "home_name": "Opponent123",
-            "away_name": "poopoopee155",
+            "away_name": "test_player",
         }
 
         self.assertEqual(
             get_user_side(
                 game,
-                "poopoopee155",
+                "test_player",
             ),
             "away",
         )
@@ -121,7 +121,7 @@ class UserSideTests(unittest.TestCase):
         self.assertEqual(
             get_user_side(
                 game,
-                "poopoopee155",
+                "test_player",
             ),
             "home",
         )
@@ -135,7 +135,7 @@ class UserSideTests(unittest.TestCase):
         self.assertEqual(
             get_user_side(
                 game,
-                "poopoopee155",
+                "test_player",
             ),
             "away",
         )
@@ -149,7 +149,7 @@ class UserSideTests(unittest.TestCase):
         self.assertEqual(
             get_user_side(
                 game,
-                "poopoopee155",
+                "test_player",
             ),
             "unknown",
         )
@@ -159,7 +159,7 @@ class GameAttributionTests(unittest.TestCase):
     def setUp(self):
         self.game = {
             "home_name": (
-                "poopoopee155 ^b53^"
+                "test_player ^b53^"
             ),
             "away_name": (
                 "Solokaden1011 ^b54^"
@@ -174,7 +174,7 @@ class GameAttributionTests(unittest.TestCase):
         self.assertEqual(
             get_user_result(
                 self.game,
-                "poopoopee155",
+                "test_player",
             ),
             "W",
         )
@@ -183,7 +183,7 @@ class GameAttributionTests(unittest.TestCase):
         self.assertEqual(
             get_opponent_name(
                 self.game,
-                "poopoopee155",
+                "test_player",
             ),
             "Solokaden1011",
         )
@@ -192,7 +192,7 @@ class GameAttributionTests(unittest.TestCase):
         self.assertEqual(
             get_opponent_team_name(
                 self.game,
-                "poopoopee155",
+                "test_player",
             ),
             "Kraken",
         )

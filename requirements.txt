@@ -3,3 +3,4 @@ rich
 fastapi
 uvicorn[standard]
 pydantic
+python-dotenv

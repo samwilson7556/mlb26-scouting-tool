@@ -73,7 +73,7 @@ Run the test suite with:
 python -m unittest discover -s tests -v
 ```
 
-The current automated suite contains 47 tests.
+The current automated suite contains 53 tests.
 
 ---
 
@@ -137,6 +137,7 @@ rich
 fastapi
 uvicorn[standard]
 pydantic
+python-dotenv
 ```
 
 ### Frontend
@@ -177,6 +178,14 @@ Install backend dependencies:
 pip install -r requirements.txt
 ```
 
+Create your local backend configuration:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and replace `your_username` with your MLB The Show username. The `.env` file is ignored by Git and must not be committed.
+
 Initialize the local database:
 
 ```bash
@@ -203,17 +212,19 @@ MLBTS_BASE_URL
 MLBTS_REQUEST_DELAY_SECONDS
 ```
 
-Defaults are defined in `src/config.py`.
+`MLBTS_USERNAME` is required and has no hardcoded fallback. Local development loads it from the repository-root `.env` file via `python-dotenv`. Other configuration values retain safe defaults in `src/config.py`.
 
-For example, on macOS or Linux:
+Example `.env`:
 
-```bash
-export MLBTS_USERNAME="your_username"
-export MLBTS_PLATFORM="psn"
-export MLBTS_MODE="arena"
+```text
+MLBTS_USERNAME=your_username
+MLBTS_PLATFORM=psn
+MLBTS_MODE=arena
+MLBTS_BASE_URL=https://mlb26.theshow.com
+MLBTS_REQUEST_DELAY_SECONDS=0.75
 ```
 
-Then start the application from the same shell.
+Real environment variables take precedence over values loaded from `.env`.
 
 Common platform values used by MLB The Show include:
 

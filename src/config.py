@@ -1,11 +1,29 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+
+PROJECT_ROOT = (
+    Path(__file__).resolve().parents[1]
+)
+
+load_dotenv(
+    PROJECT_ROOT / ".env"
+)
+
 
 USERNAME = os.getenv(
     "MLBTS_USERNAME",
-    "poopoopee155",
+    "",
 ).strip()
+
+if not USERNAME:
+    raise RuntimeError(
+        "MLBTS_USERNAME is not configured. "
+        "Copy .env.example to .env and set "
+        "your MLB The Show username."
+    )
 
 PLATFORM = os.getenv(
     "MLBTS_PLATFORM",
@@ -28,10 +46,6 @@ GAME_HISTORY_URL = (
 
 GAME_LOG_URL = (
     f"{BASE_URL}/apis/game_log.json"
-)
-
-PROJECT_ROOT = (
-    Path(__file__).resolve().parents[1]
 )
 
 DATA_DIR = PROJECT_ROOT / "data"
