@@ -1,254 +1,89 @@
 # MLB The Show 26 Game History & Scouting Tool
 
-A local Python + SQLite + FastAPI + Next.js tool for collecting, filtering, storing, and analyzing MLB The Show 26 online game history and game logs.
+A local Python, SQLite, FastAPI, and Next.js application for collecting, storing, browsing, and analyzing MLB The Show 26 online game data.
 
-The project pulls game history from the MLB The Show 26 API, removes games played against the CPU, stores only human-vs-human online games, fetches full game logs, provides local opponent scouting, supports live opponent scouting by username, and includes a browser-based user interface.
-
----
-
-## Current Scope
-
-This README reflects the project after the following features were added:
-
-- Python collector
-- SQLite database
-- CPU-game filtering
-- Individual game-log retrieval
-- Automatic web-page priming for missing game logs
-- Local opponent scouting
-- Live opponent scouting
-- Concurrent game-log fetching for faster live scouting
-- FastAPI backend
-- Next.js + TypeScript + Tailwind frontend
-- Sync controls in the UI
-- Git/GitHub-ready project structure
+The project is designed around human-vs-human game history. It retrieves MLB The Show game-history records, filters CPU games, stores game and box-score data locally, supports opponent scouting, and provides a browser-based frontend.
 
 ---
 
-## Included Features
+## Current Features
 
 ### Data Collection
 
-- Fetch paginated game history from MLB The Show 26
-- Read `total_pages` from the API response and request each page
-- Combine game history results
-- Remove games played against CPU
-- Store only human-vs-human online games
-- Export filtered human-only game history as JSON
-- Store game history in SQLite
-
-### Game Log Retrieval
-
-- Fetch individual game logs by game ID
-- Automatically prime missing game logs by visiting the web game page
-- Retry game-log API requests after priming
-- Store raw game-log JSON files locally
-- Store raw game-log JSON in SQLite
-- Parse box score data into structured SQLite tables
+- Fetch paginated MLB The Show 26 game history
+- Automatically read the API-reported page count
+- Filter CPU games
+- Store human-vs-human games in SQLite
+- Export human-only game history
+- Fetch individual game logs
+- Store raw game-log responses
+- Parse team and player box-score statistics
+- Preserve previously successful game logs if the MLBTS API later returns an error
 
 ### Scouting
 
-- View known opponents from your local game history
-- Scout opponents you have already played
-- Run live scouting by entering a username
-- Fetch live game history for another player
-- Remove that player's CPU games
-- Calculate recent record, runs/game, hits/game, and errors/game
-- Optionally include game logs for batting average and ERA estimates
-- Use concurrent game-log workers to speed up live scouting
+- Browse known opponents
+- Review previous games against a specific opponent
+- Run live scouting against another MLBTS username
+- Calculate recent:
+  - record
+  - win percentage
+  - runs scored
+  - runs allowed
+  - hits
+  - errors
+- Optionally retrieve game logs for:
+  - batting average
+  - pitching innings
+  - ERA
 
-### Web UI
+### Web Application
 
-- Dashboard page
-- Games page
-- Opponents page
-- Scout page
-- Sync page
-- Local scouting from the browser
-- Live scouting from the browser
-- Configurable live-scout pages, max games, and game-log workers
+The Next.js frontend includes:
+
+- Dashboard
+- Games
+- Opponents
+- Scout
+- Sync
+
+The Games page loads the complete local game set rather than being limited to a single 500-row API response.
+
+The frontend reads the configured MLBTS identity from the backend rather than duplicating the username and platform in TypeScript.
+
+### Automated Testing
+
+The repository includes automated tests for:
+
+- CPU filtering
+- username cleanup
+- user-side attribution
+- opponent attribution
+- baseball innings-pitched conversion
+- ERA calculation
+- SQLite schema migration
+- game-log response classification
+- game-log retry behavior
+- successful-log preservation
+- parsed box-score replacement
+
+Run the test suite with:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The current automated suite contains 43 tests.
 
 ---
 
-## Not Yet Included
-
-These are good candidates for future work:
-
-- Deep play-by-play parsing
-- Pitching tendency analysis
-- Hitting tendency analysis
-- Strikeout/walk trend analysis
-- Perfect-perfect hit tracking
-- Inning-by-inning scoring trends
-- Player-card level trends
-- Advanced charts
-- Authentication
-- Deployment as a hosted web app
-- Background jobs for sync operations
-- Persistent live-scout caching
-
----
-
-## Project Purpose
-
-The goal of this tool is to help analyze MLB The Show 26 online performance and build a foundation for player-improvement insights.
-
-The tool collects online game history, filters out CPU games, downloads detailed logs for each real-player match, and stores everything in a structured format so you can later analyze:
-
-- Win/loss trends
-- Opponent history
-- Runs scored and allowed
-- Batting performance
-- Pitching performance
-- Player-specific box score data
-- Common opponents
-- Games where you struggled
-- Games where you performed well
-- Opponent scouting before a matchup
-
----
-
-## API Endpoints Used
-
-### Game History API
-
-```text
-https://mlb26.theshow.com/apis/game_history.json?page={page}&username={username}&platform={platform}&mode=arena
-```
-
-Example:
-
-```text
-https://mlb26.theshow.com/apis/game_history.json?page=1&username=poopoopee155&platform=psn&mode=arena
-```
-
-The response includes:
-
-- `page`
-- `per_page`
-- `total_pages`
-- `game_history`
-
-Each game in `game_history` includes fields such as:
-
-```json
-{
-  "id": "887003117",
-  "game_mode": "ARENA",
-  "home_full_name": "Hoosiers",
-  "away_full_name": "Red Strikers",
-  "home_display_result": "L",
-  "away_display_result": "W",
-  "home_runs": "0",
-  "away_runs": "2",
-  "home_hits": "2",
-  "away_hits": "5",
-  "home_errors": "1",
-  "away_errors": "0",
-  "home_name": "poopoopee155 ^b53^",
-  "away_name": "Dbmotter15 ^b54^",
-  "display_date": "05/27/2026 20:29:02"
-}
-```
-
-### Game Log API
-
-```text
-https://mlb26.theshow.com/apis/game_log.json?id={id}
-```
-
-Example:
-
-```text
-https://mlb26.theshow.com/apis/game_log.json?id=887003117
-```
-
-The response can include:
-
-- `line_score`
-- `game_log`
-- `box_score`
-
-Some game IDs may initially return:
-
-```json
-{
-  "error": "game not found"
-}
-```
-
-When that happens, the tool visits the web page version first:
-
-```text
-https://mlb26.theshow.com/games/{id}?platform=psn&username=poopoopee155
-```
-
-Then it retries the API request.
-
-This "prime then retry" behavior is built into both local game-log sync and live scouting with game logs.
-
----
-
-## CPU Game Filtering Rule
-
-Games are removed if either team is listed as `CPU`.
-
-A game is considered a CPU game when:
-
-```text
-home_full_name == "CPU"
-```
-
-or:
-
-```text
-away_full_name == "CPU"
-```
-
-Only games where both sides are human-controlled are stored or analyzed.
-
----
-
-## Live Scouting Attribution Rule
-
-Live scouting applies a second filter after CPU games are removed.
-
-A game is only included in a live scout report if the searched username can be identified as either:
-
-```text
-home_name
-```
-
-or:
-
-```text
-away_name
-```
-
-This prevents rows with blank values for:
-
-- Result
-- Opponent
-- Score
-- Hits
-
-The report also tracks:
-
-```text
-skipped_unattributable_games
-```
-
-This value represents non-CPU games that were skipped because the searched username could not be confidently matched to either side of the game.
-
----
-
-## Recommended Project Structure
+## Project Structure
 
 ```text
 mlb26-scouting-tool/
 ├── data/
-│   ├── raw_game_logs/
 │   ├── exports/
+│   ├── raw_game_logs/
 │   └── mlb26_games.sqlite3
 ├── src/
 │   ├── __init__.py
@@ -260,27 +95,23 @@ mlb26-scouting-tool/
 │   ├── main.py
 │   ├── parser.py
 │   └── scout.py
+├── tests/
+│   ├── test_database_collector.py
+│   └── test_parser.py
 ├── web/
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── games/
-│   │   │   ├── opponents/
-│   │   │   ├── scout/
-│   │   │   ├── sync/
-│   │   │   ├── globals.css
-│   │   │   ├── layout.tsx
-│   │   │   └── page.tsx
 │   │   ├── components/
-│   │   │   └── app-shell.tsx
 │   │   └── lib/
-│   │       └── api.ts
 │   ├── .env.example
 │   ├── package.json
-│   └── ...
+│   └── package-lock.json
 ├── .gitignore
 ├── README.md
 └── requirements.txt
 ```
+
+Local database files, raw game logs, exports, Python virtual environments, Node dependencies, Next.js build output, and local environment files are excluded from Git.
 
 ---
 
@@ -289,10 +120,16 @@ mlb26-scouting-tool/
 ### Backend
 
 - Python 3.11 or newer
-- Internet access
-- SQLite, included with Python
+- SQLite
+- Internet access for MLBTS API operations
 
-Python packages:
+Python dependencies are defined in:
+
+```text
+requirements.txt
+```
+
+Current packages:
 
 ```text
 requests
@@ -306,129 +143,79 @@ pydantic
 
 - Node.js
 - npm
+
+The frontend currently uses:
+
 - Next.js
+- React
 - TypeScript
 - Tailwind CSS
 
 ---
 
-## Setup Instructions
+## Backend Setup
 
-### 1. Create the Python virtual environment
+From the project root, create and activate a virtual environment.
 
-macOS/Linux:
+### macOS or Linux
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Windows PowerShell:
+### Windows PowerShell
 
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-If PowerShell blocks activation:
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-.\.venv\Scripts\Activate.ps1
-```
-
-### 2. Install backend dependencies
-
-Create or update `requirements.txt`:
-
-```txt
-requests
-rich
-fastapi
-uvicorn[standard]
-pydantic
-```
-
-Install:
+Install backend dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure the frontend environment
+Initialize the local database:
 
-Create:
-
-```text
-web/.env.local
-```
-
-Add:
-
-```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-```
-
-An example file can also be committed as:
-
-```text
-web/.env.example
-```
-
-with:
-
-```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```bash
+python -m src.main init
 ```
 
 ---
 
-## Configuration
+## Backend Configuration
 
-Project settings are stored in:
+Application configuration is centralized in:
 
 ```text
 src/config.py
 ```
 
-Example configuration:
+The following environment variables are supported:
 
-```python
-from pathlib import Path
-
-USERNAME = "poopoopee155"
-PLATFORM = "psn"
-MODE = "arena"
-
-BASE_URL = "https://mlb26.theshow.com"
-
-GAME_HISTORY_URL = f"{BASE_URL}/apis/game_history.json"
-GAME_LOG_URL = f"{BASE_URL}/apis/game_log.json"
-
-GAME_WEB_URL_TEMPLATE = (
-    f"{BASE_URL}/games/{{game_id}}?platform={PLATFORM}&username={USERNAME}"
-)
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = PROJECT_ROOT / "data"
-RAW_GAME_LOG_DIR = DATA_DIR / "raw_game_logs"
-EXPORT_DIR = DATA_DIR / "exports"
-
-DB_PATH = DATA_DIR / "mlb26_games.sqlite3"
-
-REQUEST_DELAY_SECONDS = 0.75
-RETRY_DELAY_SECONDS = 2.0
+```text
+MLBTS_USERNAME
+MLBTS_PLATFORM
+MLBTS_MODE
+MLBTS_BASE_URL
+MLBTS_REQUEST_DELAY_SECONDS
 ```
 
-Update these values as needed:
+Defaults are defined in `src/config.py`.
 
-```python
-USERNAME = "poopoopee155"
-PLATFORM = "psn"
-MODE = "arena"
+For example, on macOS or Linux:
+
+```bash
+export MLBTS_USERNAME="your_username"
+export MLBTS_PLATFORM="psn"
+export MLBTS_MODE="arena"
 ```
 
-Common platform values may include:
+Then start the application from the same shell.
+
+Common platform values used by MLB The Show include:
 
 ```text
 psn
@@ -437,21 +224,225 @@ mlbts
 nsw
 ```
 
+The backend configuration is also exposed to the local frontend through:
+
+```text
+GET /config
+```
+
+This keeps the configured username, platform, and game mode in one place.
+
 ---
 
-## Database Design
+## MLB The Show APIs
 
-The project uses SQLite.
+The collector currently uses two MLB The Show 26 API endpoints.
 
-Database file:
+### Game History
+
+Base path:
+
+```text
+/apis/game_history.json
+```
+
+Required query information includes:
+
+```text
+page
+username
+platform
+mode
+```
+
+Conceptually:
+
+```text
+/apis/game_history.json?page={page}&username={username}&platform={platform}&mode={mode}
+```
+
+The collector reads `total_pages` and continues requesting pages until the available history has been collected.
+
+### Game Log
+
+Base path:
+
+```text
+/apis/game_log.json
+```
+
+Game-log requests require:
+
+```text
+id
+username
+platform
+```
+
+Conceptually:
+
+```text
+/apis/game_log.json?id={id}&username={username}&platform={platform}
+```
+
+The current implementation requests the API directly.
+
+Game-log retrieval uses the API directly without first visiting the normal game webpage.
+
+The application does not visit the normal MLBTS game webpage before requesting a game log.
+
+---
+
+## Game-Log Error Handling
+
+MLBTS does not always return a usable historical game log.
+
+Responses are classified as:
+
+```text
+ok
+identity_mismatch
+not_found
+api_error
+```
+
+A known MLBTS response such as:
+
+```text
+Username and platform do not match the game record.
+```
+
+is stored as:
+
+```text
+identity_mismatch
+```
+
+Once an API response has been recorded for a game, normal sync operations do not repeatedly request that same game.
+
+Network or request failures are different. Because no API result was successfully received, those games remain eligible for a later retry.
+
+### Successful Log Preservation
+
+A previously successful log is never replaced by a later MLBTS error response.
+
+This protection applies to:
+
+- the SQLite `game_logs` row
+- the saved raw game-log JSON file
+
+This is important because MLBTS historical API behavior can change over time.
+
+---
+
+## CPU Game Filtering
+
+CPU detection is based on the team-name fields:
+
+```text
+home_full_name
+away_full_name
+```
+
+A game is considered a CPU game when either full team name is `CPU`, case-insensitively.
+
+The application deliberately does not use only `home_name` or `away_name` for CPU filtering.
+
+MLBTS can use `CPU` in those username-style fields as a marker for the searched user's side, even when the actual game was human-vs-human.
+
+---
+
+## User-Side Attribution
+
+The shared parser determines whether the configured or searched user was home or away.
+
+It first compares the cleaned username against:
+
+```text
+home_name
+away_name
+```
+
+MLBTS formatting suffixes such as:
+
+```text
+^b53^
+```
+
+are removed before comparison.
+
+When necessary, the parser can also use the MLBTS `CPU` username marker as a side-attribution fallback.
+
+This shared logic is used across:
+
+- game collection
+- local scouting
+- live scouting
+
+That prevents each part of the project from maintaining its own username-attribution rules.
+
+---
+
+## Baseball Innings-Pitched Handling
+
+Baseball innings notation is not decimal arithmetic.
+
+For example:
+
+```text
+5.0 = 15 outs
+5.1 = 16 outs
+5.2 = 17 outs
+```
+
+It would be incorrect to treat `5.2` as 5.2 mathematical innings.
+
+The application therefore stores authoritative pitching duration as:
+
+```text
+pitching_outs
+```
+
+in both:
+
+```text
+team_box_scores
+player_pitching_stats
+```
+
+The older numeric IP fields remain available for compatibility and display purposes, but calculations such as ERA use outs.
+
+ERA is calculated from:
+
+```text
+ERA = earned_runs * 27 / pitching_outs
+```
+
+Example:
+
+```text
+3 ER in 5.2 IP
+= 3 ER in 17 outs
+= 4.76 ERA
+```
+
+Existing databases are automatically migrated to add the `pitching_outs` columns when necessary.
+
+---
+
+## Database
+
+The local SQLite database is:
 
 ```text
 data/mlb26_games.sqlite3
 ```
 
+It is intentionally excluded from Git.
+
 ### `games`
 
-Stores filtered human-only game history.
+Stores filtered game-history records including:
 
 ```text
 id
@@ -475,7 +466,7 @@ raw_game_history_json
 
 ### `game_logs`
 
-Stores full raw game-log API responses and text logs.
+Stores MLBTS game-log results:
 
 ```text
 game_id
@@ -487,7 +478,7 @@ raw_text_log
 
 ### `team_box_scores`
 
-Stores parsed team-level box score data.
+Stores parsed team statistics including:
 
 ```text
 game_id
@@ -503,6 +494,7 @@ batting_rbi
 batting_bb
 batting_so
 pitching_ip
+pitching_outs
 pitching_h
 pitching_r
 pitching_er
@@ -512,7 +504,7 @@ pitching_so
 
 ### `player_batting_stats`
 
-Stores parsed player batting stats.
+Stores individual batting statistics including:
 
 ```text
 game_id
@@ -534,7 +526,7 @@ cs
 
 ### `player_pitching_stats`
 
-Stores parsed player pitching stats.
+Stores individual pitching statistics including:
 
 ```text
 game_id
@@ -542,6 +534,7 @@ team_id
 team_name
 player_name
 ip
+pitching_outs
 h
 r
 er
@@ -554,157 +547,173 @@ save
 
 ---
 
-## Backend CLI Commands
+## Backend CLI
 
-All commands should be run from the project root.
-
-Because this project uses package-style imports, use:
+Run CLI commands from the repository root using:
 
 ```bash
 python -m src.main <command>
 ```
 
-### Initialize the database
+### Initialize
 
 ```bash
 python -m src.main init
 ```
 
-### Sync game history only
+### Sync Game History
 
 ```bash
 python -m src.main sync-history
 ```
 
-This command requests all game-history pages, removes CPU games, stores human-only games in SQLite, and exports filtered game history to:
+This retrieves available game-history pages, filters CPU games, updates SQLite, and exports the filtered history.
 
-```text
-data/exports/human_only_game_history.json
-```
-
-### Sync game logs only
+### Sync Game Logs
 
 ```bash
 python -m src.main sync-logs
 ```
 
-This command fetches individual game logs for stored human-only games, primes missing logs when needed, and parses box score data.
+This retrieves game logs for stored games that do not yet have a recorded game-log API result.
 
-### Sync everything
+### Sync Everything
 
 ```bash
 python -m src.main sync-all
 ```
 
-### View known opponents
+This runs game-history sync followed by game-log sync and exports the opponent summary.
+
+### List Opponents
 
 ```bash
 python -m src.main opponents
 ```
 
-### Scout a local opponent
+### Scout a Previously Played Opponent
 
 ```bash
-python -m src.main scout --username Dbmotter15
+python -m src.main scout --username OpponentName
 ```
 
-### Live scout an opponent
+### Live Scout an MLBTS User
 
 ```bash
-python -m src.main live-scout --username DCBeenNice --platform psn
+python -m src.main live-scout --username OpponentName
 ```
 
-### Live scout with game logs
+The platform defaults to the centralized `PLATFORM` value from `src/config.py`.
+
+Specify one explicitly if needed:
 
 ```bash
-python -m src.main live-scout --username DCBeenNice --platform psn --include-logs
+python -m src.main live-scout --username OpponentName --platform xbl
 ```
 
-### Live scout with concurrent game-log workers
+### Live Scout with Game Logs
 
 ```bash
-python -m src.main live-scout --username DCBeenNice --platform psn --include-logs --log-workers 5
+python -m src.main live-scout --username OpponentName --include-logs
 ```
 
-`--log-workers` controls how many game logs are fetched/primed concurrently.
+Game logs are fetched concurrently.
 
-Recommended values:
+The default worker count is:
 
 ```text
-5   safe starting point
-8   faster, usually still reasonable
-10  upper limit currently allowed by the API model
+5
 ```
 
-### Limit pages and max games
+It can be changed with:
 
 ```bash
-python -m src.main live-scout --username DCBeenNice --platform psn --pages 2 --max-games 25
+python -m src.main live-scout --username OpponentName --include-logs --log-workers 3
 ```
 
-### Export opponent summary
+### Limit History Pages and Analyzed Games
+
+```bash
+python -m src.main live-scout --username OpponentName --pages 2 --max-games 25
+```
+
+### Export Local Opponent Summary
 
 ```bash
 python -m src.main export-opponents
-```
-
-Output file:
-
-```text
-data/exports/opponent_summary.json
 ```
 
 ---
 
 ## FastAPI Backend
 
-The backend API is defined in:
-
-```text
-src/api.py
-```
-
-Start the backend from the project root:
+Start FastAPI from the project root:
 
 ```bash
 uvicorn src.api:app --reload --port 8000
 ```
 
-Health check:
+Useful local addresses:
 
 ```text
-http://localhost:8000/health
-```
-
-Expected response:
-
-```json
-{
-  "status": "ok"
-}
-```
-
-FastAPI docs:
-
-```text
-http://localhost:8000/docs
+Backend: localhost:8000
+Health:  localhost:8000/health
+Docs:    localhost:8000/docs
 ```
 
 ---
 
 ## Backend API Routes
 
+The backend currently exposes:
+
+```text
+GET  /health
+GET  /config
+GET  /dashboard
+GET  /games
+GET  /games/{game_id}
+GET  /opponents
+GET  /opponents/{username}
+
+POST /sync/history
+POST /sync/logs
+POST /sync/all
+POST /live-scout
+```
+
 ### `GET /health`
 
-Returns backend status.
+Returns basic backend status.
+
+### `GET /config`
+
+Returns the currently configured:
+
+```text
+username
+platform
+mode
+```
+
+The frontend uses this route so application identity settings do not need to be duplicated in TypeScript.
 
 ### `GET /dashboard`
 
-Returns total human games, total game logs, record, averages, and recent games.
+Returns:
+
+- total stored games
+- total game-log records
+- successful game-log count
+- win/loss record
+- win percentage
+- average runs scored
+- average runs allowed
+- recent games
 
 ### `GET /games`
 
-Query parameters:
+Supported query parameters:
 
 ```text
 limit
@@ -713,43 +722,55 @@ opponent
 result
 ```
 
-Example:
+The backend limits an individual request to 500 rows.
 
-```text
-http://localhost:8000/games?limit=100
-```
+The frontend Games page handles this by requesting additional pages until all available rows have been loaded.
 
 ### `GET /games/{game_id}`
 
-Returns game detail, game log, team box scores, batting stats, and pitching stats.
+Returns stored information for a specific game, including related game-log and parsed box-score information when available.
 
 ### `GET /opponents`
 
-Returns locally known opponents.
+Returns locally known opponents derived from stored game history.
 
 ### `GET /opponents/{username}`
 
-Returns local scouting information for an opponent you have already played.
+Returns a local scouting report for a previously played opponent.
 
 ### `POST /sync/history`
 
-Runs game-history sync.
+Runs game-history synchronization.
 
 ### `POST /sync/logs`
 
-Runs game-log sync.
+Runs game-log synchronization.
+
+The response includes a detailed summary containing:
+
+```text
+requested
+ok
+identity_mismatch
+not_found
+api_error
+request_failed
+preserved_ok
+```
+
+The Sync page displays this result rather than only showing a generic completion message.
 
 ### `POST /sync/all`
 
-Runs game-history sync and game-log sync.
+Runs game-history sync followed by game-log sync.
 
 ### `POST /live-scout`
 
-Request body:
+Example request body:
 
 ```json
 {
-  "username": "DCBeenNice",
+  "username": "OpponentName",
   "platform": "psn",
   "pages": 1,
   "max_games": 25,
@@ -758,44 +779,93 @@ Request body:
 }
 ```
 
-Returns a live scout report including recent record, win percentage, run averages, hit averages, CPU games removed, skipped unattributable games, recent games, and optional advanced stats from game logs.
+A live scout report includes:
+
+- searched username
+- platform
+- mode
+- pages fetched
+- total games discovered
+- CPU games removed
+- unattributable games skipped
+- recent games analyzed
+- wins
+- losses
+- win percentage
+- runs per game
+- runs allowed per game
+- hits per game
+- hits allowed per game
+- optional batting average
+- optional pitching innings
+- optional ERA
+- recent game details
+
+Live scouting does not write the opponent's history into the main local games database.
 
 ---
 
-## Frontend UI
+## Frontend Setup
 
-The frontend is located in:
-
-```text
-web/
-```
-
-Start the frontend in a second terminal:
+Install frontend dependencies:
 
 ```bash
 cd web
+npm install
+```
+
+Create the local frontend environment file:
+
+```text
+web/.env.local
+```
+
+Use:
+
+```text
+web/.env.example
+```
+
+as the template.
+
+The environment setting identifies the FastAPI backend used by the browser.
+
+The example file contains:
+
+```text
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```
+
+Then run:
+
+```bash
 npm run dev
 ```
 
-Open:
+The frontend is available at:
 
 ```text
-http://localhost:3000
+localhost:3000
 ```
 
 ---
 
-## Running the Full App
+## Running the Full Application
 
 Use two terminals.
 
-### Terminal 1 — backend
+### Terminal 1 — Backend
+
+From the repository root:
 
 ```bash
+source .venv/bin/activate
 uvicorn src.api:app --reload --port 8000
 ```
 
-### Terminal 2 — frontend
+### Terminal 2 — Frontend
+
+From the repository root:
 
 ```bash
 cd web
@@ -805,457 +875,211 @@ npm run dev
 Then open:
 
 ```text
-http://localhost:3000
+localhost:3000
 ```
 
 ---
 
-## UI Pages
+## Frontend Pages
 
 ### Dashboard
 
-```text
-/
-```
-
-Shows total human games, total game logs, record, runs/game, and recent games.
+Displays a summary of the locally stored game database, including record, averages, successful log count, and recent games.
 
 ### Games
 
-```text
-/games
-```
+Displays the complete local human-vs-human game history.
 
-Shows human-only online game history.
+Features include:
+
+- sortable columns
+- configurable row count
+- opponent names
+- results
+- scores
+- hits
+- game IDs
+- links to MLB The Show game pages
+
+Selecting `All` loads all available games by paging through the backend API rather than assuming the database contains fewer than 500 records.
 
 ### Opponents
 
-```text
-/opponents
-```
-
-Shows opponents from the local database.
+Displays opponents found in the local database and their aggregate history against the configured user.
 
 ### Scout
 
-```text
-/scout
-```
+Provides two scouting modes.
 
-Supports local scout, live scout, platform selection, page count, max games, include game logs, and game-log worker count.
+#### Local Scout
+
+Uses only the local SQLite database to analyze an opponent already present in stored history.
+
+#### Live Scout
+
+Requests another user's current MLBTS history directly.
+
+Options include:
+
+- username
+- platform
+- history pages
+- maximum games
+- optional game logs
+- configurable game-log worker count
+
+If game logs are enabled, the tool performs additional MLBTS API requests and can calculate batting average, pitching innings, and ERA.
 
 ### Sync
 
-```text
-/sync
-```
+Provides controls for:
 
-Supports Sync History, Sync Logs, and Sync All.
+- history-only sync
+- game-log-only sync
+- full sync
 
----
-
-## Live Scouting Performance
-
-Originally, live scouting with game logs processed game IDs serially:
-
-```text
-game 1 → prime → retry → parse
-game 2 → prime → retry → parse
-game 3 → prime → retry → parse
-```
-
-This was slow because each missing game log could spend 10–30 seconds priming the web page.
-
-The current implementation uses concurrent workers:
-
-```text
-game 1 ┐
-game 2 ├── concurrent workers
-game 3 ┤
-game 4 ┘
-```
-
-The worker count is configurable in:
-
-- CLI: `--log-workers`
-- API: `log_workers`
-- UI: `Game Log Workers`
-
-Recommended starting value:
-
-```text
-5
-```
+The page also displays detailed game-log synchronization results.
 
 ---
 
-## Expected Output Files
+## Testing
 
-After running a full sync, you should have:
+### Python
+
+From the project root:
+
+```bash
+python -m compileall src tests
+python -m unittest discover -s tests -v
+```
+
+The current automated suite contains:
 
 ```text
-data/
-├── mlb26_games.sqlite3
-├── raw_game_logs/
-│   ├── 887003117.json
-│   ├── 887685664.json
-│   └── ...
-└── exports/
-    ├── human_only_game_history.json
-    ├── opponent_summary.json
-    └── live_scout_<username>_<timestamp>.json
+43 tests
 ```
+
+The tests use temporary SQLite databases and temporary directories where needed.
+
+They do not require the production database and do not make MLBTS network requests.
+
+Current test coverage includes:
+
+- username style-suffix removal
+- case-insensitive username normalization
+- CPU team filtering
+- MLBTS CPU side-marker handling
+- home/away user attribution
+- opponent attribution
+- baseball IP-to-outs conversion
+- outs-to-IP conversion
+- ERA calculation
+- safe numeric conversion
+- CSV integer parsing
+- creation of pitching-out columns
+- migration of older databases
+- MLBTS game-log status classification
+- unfetched-game selection
+- prevention of automatic retries for recorded API errors
+- preservation of successful database logs
+- preservation of successful raw log files
+- team pitching-out parsing
+- player pitching-out parsing
+- replacement of previously parsed box-score rows
+
+### Frontend
+
+From the `web` directory:
+
+```bash
+npm run lint
+npm run build
+```
+
+A successful production build also performs TypeScript validation.
 
 ---
 
-## Useful SQL Queries
+## Local Data
 
-Database path:
+The following are intentionally local-only:
 
 ```text
 data/mlb26_games.sqlite3
-```
-
-### Count stored games
-
-```sql
-SELECT COUNT(*) FROM games;
-```
-
-### Count fetched game logs
-
-```sql
-SELECT COUNT(*) FROM game_logs;
-```
-
-### View most recent games
-
-```sql
-SELECT
-    display_date,
-    opponent_name,
-    user_result,
-    home_full_name,
-    away_full_name,
-    home_runs,
-    away_runs
-FROM games
-ORDER BY display_date DESC
-LIMIT 10;
-```
-
-### Record by opponent
-
-```sql
-SELECT
-    opponent_name,
-    COUNT(*) AS games,
-    SUM(CASE WHEN user_result = 'W' THEN 1 ELSE 0 END) AS wins,
-    SUM(CASE WHEN user_result = 'L' THEN 1 ELSE 0 END) AS losses
-FROM games
-GROUP BY opponent_name
-ORDER BY games DESC;
-```
-
-### Average runs scored and allowed
-
-```sql
-SELECT
-    AVG(
-        CASE
-            WHEN home_name = 'poopoopee155' THEN home_runs
-            WHEN away_name = 'poopoopee155' THEN away_runs
-        END
-    ) AS avg_runs_scored,
-    AVG(
-        CASE
-            WHEN home_name = 'poopoopee155' THEN away_runs
-            WHEN away_name = 'poopoopee155' THEN home_runs
-        END
-    ) AS avg_runs_allowed
-FROM games;
-```
-
----
-
-## GitHub / Repository Notes
-
-Recommended `.gitignore` entries:
-
-```gitignore
-# Python
-.venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# Environment files
-.env
-.env.*
-!.env.example
-web/.env.local
-web/.env.*.local
-
-# Local data/database/log exports
-data/mlb26_games.sqlite3
-data/*.sqlite3
 data/raw_game_logs/
 data/exports/
-*.db
-*.sqlite
-*.sqlite3
-
-# Node / Next.js
-web/node_modules/
-web/.next/
-web/out/
-web/dist/
-web/.turbo/
-
-# OS/editor
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
+web/.env.local
+.venv/
 ```
 
-Push to GitHub:
-
-```bash
-git init
-git remote add origin https://github.com/samwilson7556/mlb26-scouting-tool.git
-git add .
-git commit -m "Initial commit for MLB26 scouting tool"
-git branch -M main
-git push -u origin main
-```
-
-If the remote already exists:
-
-```bash
-git remote set-url origin https://github.com/samwilson7556/mlb26-scouting-tool.git
-```
-
----
-
-## Troubleshooting
-
-### PowerShell cannot activate the virtual environment
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-.\.venv\Scripts\Activate.ps1
-```
-
-### `ModuleNotFoundError`
-
-Run commands from the project root with:
-
-```bash
-python -m src.main sync-all
-```
-
-Do not run:
-
-```bash
-python src/main.py
-```
-
-### Backend cannot import packages
-
-Make sure your virtual environment is active and dependencies are installed:
-
-```bash
-pip install -r requirements.txt
-```
-
-### Frontend cannot reach backend
-
-Confirm the backend is running:
-
-```bash
-uvicorn src.api:app --reload --port 8000
-```
-
-Confirm this URL works:
-
-```text
-http://localhost:8000/health
-```
-
-Confirm `web/.env.local` contains:
-
-```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-```
-
-Restart the frontend after changing `.env.local`.
-
-### Game logs still return `game not found`
-
-The tool already tries to prime the web page first.
-
-If some still fail, possible reasons include:
-
-- The site needs more time to generate the game log
-- The game is no longer available
-- The game ID is invalid
-- The site temporarily blocked or throttled the request
-
-### Live Scout shows blank rows
-
-This was addressed by filtering out unattributable games.
-
-If blanks still appear, check:
-
-- The searched username spelling
-- The selected platform
-- Whether the API returns decorated or unexpected username values
-- Whether the returned game belongs to a linked account name rather than the searched username
-
-The report includes:
-
-```text
-skipped_unattributable_games
-```
-
-to help diagnose this.
-
-### Include Game Logs is slow
-
-Use concurrent game-log workers.
-
-Recommended UI settings:
-
-```text
-Pages: 1
-Max Games: 25
-Include game logs: checked
-Game Log Workers: 5
-```
-
-Try increasing to:
-
-```text
-8
-```
-
-Avoid going above:
-
-```text
-10
-```
-
-unless you intentionally modify the backend validation and are comfortable testing rate limits.
-
-### CPU games are still appearing
-
-Confirm the API response uses exactly:
-
-```text
-CPU
-```
-
-in either:
-
-```text
-home_full_name
-away_full_name
-```
-
-The filtering logic checks both fields case-insensitively.
-
-### Usernames have suffixes like `^b53^`
-
-The MLB The Show API may return usernames like:
-
-```text
-poopoopee155 ^b53^
-```
-
-The parser strips those suffixes and stores:
-
-```text
-poopoopee155
-```
-
----
-
-## Development Order
-
-Recommended build order:
-
-```text
-1. Create project folder
-2. Create Python virtual environment
-3. Install backend dependencies
-4. Add config.py
-5. Add database.py
-6. Add parser.py
-7. Add collector.py
-8. Add scout.py
-9. Add live_scout.py
-10. Add main.py
-11. Run init
-12. Run sync-history
-13. Confirm human_only_game_history.json looks correct
-14. Run sync-logs
-15. Confirm raw_game_logs are created
-16. Open SQLite database and inspect tables
-17. Run opponents
-18. Run scout --username SomeOpponent
-19. Run live-scout --username SomeOpponent
-20. Add api.py
-21. Start FastAPI backend
-22. Create Next.js frontend
-23. Add API helper
-24. Add AppShell
-25. Add Dashboard, Games, Opponents, Scout, and Sync pages
-26. Run backend and frontend together
-27. Add .gitignore
-28. Push to GitHub
-```
+Do not commit the production SQLite database or downloaded game logs.
 
 ---
 
 ## Current Limitations
 
-- Live scouting depends on public MLB The Show API behavior.
-- Some game logs may still fail even after priming.
-- Batting average and ERA require game-log fetching.
-- Live game-log fetching can still take time if many logs require priming.
-- Advanced play-by-play analysis is not yet implemented.
-- Sync operations currently run inline through the API and UI.
-- Large sync operations may make the UI wait until the backend request finishes.
-- No background job queue is currently implemented.
-- No authentication is currently implemented.
-- No production deployment configuration is currently included.
+The project currently does not include:
+
+- background job processing for long-running sync operations
+- persistent live-scout caching
+- hosted authentication
+- production deployment configuration
+- deep play-by-play analysis
+- pitch-selection tendency analysis
+- hitting tendency analysis
+- advanced charting
+- player-card trend analysis
+
+Sync operations currently run synchronously through the FastAPI request that triggered them.
+
+The browser must wait for the operation to finish.
 
 ---
 
-## Next Planned Improvements
+## Development Notes
 
-Potential next steps:
+When modifying parsing, attribution, database migration, or game-log handling, run the Python tests before committing:
 
-- Add background sync jobs
-- Add progress status for sync and live scout operations
-- Cache live scout reports
-- Store live scout reports in SQLite
-- Add game detail page in the frontend
-- Add charts for runs scored and runs allowed over time
-- Add opponent-specific trend pages
-- Parse play-by-play text for tendencies
-- Add pitch-count and strikeout tendency analysis
-- Add batting/pitching split views
-- Add README screenshots
-- Add automated setup script
+```bash
+python -m unittest discover -s tests -v
+```
+
+When modifying the frontend, also run:
+
+```bash
+cd web
+npm run lint
+npm run build
+```
+
+The most important invariants in the current implementation are:
+
+1. CPU filtering uses the full team-name fields.
+2. Username attribution uses shared parser logic.
+3. Game-log requests include game ID, username, and platform.
+4. Game-log retrieval uses the MLBTS API directly.
+5. Known MLBTS API results are not repeatedly retried.
+6. Successful stored game logs are never downgraded by later API errors.
+7. Pitching calculations use outs rather than decimal interpretation of baseball innings notation.
+8. The configured MLBTS identity is centralized in the backend.
+9. SQLite connections are closed after CLI and API request use.
+10. The frontend production build and automated Python tests should pass before changes are committed.
 
 ---
 
-## License
+## Future Development
 
-Personal-use project.
+Potential future improvements include:
 
-Use responsibly and avoid excessive API requests.
+- asynchronous background sync jobs
+- sync progress reporting
+- persistent live-scout caching
+- deeper play-by-play parsing
+- pitch-selection analysis
+- plate-discipline trends
+- strikeout and walk trends
+- inning-by-inning scoring analysis
+- player-card performance analysis
+- charts and visual trend reporting
+- deployment configuration
+- authentication for hosted use

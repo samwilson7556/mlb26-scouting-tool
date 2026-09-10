@@ -2,13 +2,54 @@ import sqlite3
 from pathlib import Path
 
 
-def connect_db(db_path: Path) -> sqlite3.Connection:
+def connect_db(
+    db_path: Path,
+) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
 
-def init_db(conn: sqlite3.Connection) -> None:
+def column_exists(
+    conn: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+) -> bool:
+    rows = conn.execute(
+        f"PRAGMA table_info({table_name})"
+    ).fetchall()
+
+    return any(
+        row["name"] == column_name
+        for row in rows
+    )
+
+
+def ensure_column(
+    conn: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    column_definition: str,
+) -> None:
+    if column_exists(
+        conn,
+        table_name,
+        column_name,
+    ):
+        return
+
+    conn.execute(
+        f"""
+        ALTER TABLE {table_name}
+        ADD COLUMN {column_name}
+        {column_definition}
+        """
+    )
+
+
+def init_db(
+    conn: sqlite3.Connection,
+) -> None:
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS games (
@@ -41,7 +82,8 @@ def init_db(conn: sqlite3.Connection) -> None:
             api_status TEXT,
             raw_game_log_json TEXT,
             raw_text_log TEXT,
-            FOREIGN KEY(game_id) REFERENCES games(id)
+            FOREIGN KEY(game_id)
+                REFERENCES games(id)
         )
         """
     )
@@ -63,6 +105,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             batting_bb INTEGER,
             batting_so INTEGER,
             pitching_ip REAL,
+            pitching_outs INTEGER,
             pitching_h INTEGER,
             pitching_r INTEGER,
             pitching_er INTEGER,
@@ -92,7 +135,11 @@ def init_db(conn: sqlite3.Connection) -> None:
             hr INTEGER,
             sb INTEGER,
             cs INTEGER,
-            UNIQUE(game_id, team_id, player_name)
+            UNIQUE(
+                game_id,
+                team_id,
+                player_name
+            )
         )
         """
     )
@@ -106,6 +153,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             team_name TEXT,
             player_name TEXT,
             ip REAL,
+            pitching_outs INTEGER,
             h INTEGER,
             r INTEGER,
             er INTEGER,
@@ -114,9 +162,28 @@ def init_db(conn: sqlite3.Connection) -> None:
             win INTEGER,
             loss INTEGER,
             save INTEGER,
-            UNIQUE(game_id, team_id, player_name)
+            UNIQUE(
+                game_id,
+                team_id,
+                player_name
+            )
         )
         """
+    )
+
+    # Migration support for databases created before pitching_outs existed.
+    ensure_column(
+        conn,
+        "team_box_scores",
+        "pitching_outs",
+        "INTEGER",
+    )
+
+    ensure_column(
+        conn,
+        "player_pitching_stats",
+        "pitching_outs",
+        "INTEGER",
     )
 
     conn.commit()
