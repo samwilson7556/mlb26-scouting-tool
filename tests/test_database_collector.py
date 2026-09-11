@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -72,6 +73,44 @@ class TemporaryDatabaseTestCase(
         )
 
         self.conn.commit()
+
+
+class DatabaseConnectionTests(
+    TemporaryDatabaseTestCase
+):
+    def test_connection_allows_thread_handoff(
+        self,
+    ):
+        conn = connect_db(
+            self.db_path
+        )
+        errors = []
+
+        def use_and_close_connection():
+            try:
+                row = conn.execute(
+                    "SELECT 1 AS value"
+                ).fetchone()
+
+                self.assertEqual(
+                    row["value"],
+                    1,
+                )
+
+                conn.close()
+            except Exception as exc:
+                errors.append(exc)
+
+        worker = threading.Thread(
+            target=use_and_close_connection
+        )
+        worker.start()
+        worker.join()
+
+        self.assertEqual(
+            errors,
+            [],
+        )
 
 
 class DatabaseSchemaTests(
