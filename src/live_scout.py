@@ -249,6 +249,7 @@ def fetch_game_log_for_user(
 def locate_team_box_for_username(
     game_log: Dict[str, Any],
     username: str,
+    user_side: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     sections = extract_game_sections(game_log)
 
@@ -261,23 +262,43 @@ def locate_team_box_for_username(
     if not isinstance(box_score, list):
         return None
 
-    home_name = normalize_username(
-        line_score.get("home_name", "")
-    )
-    away_name = normalize_username(
-        line_score.get("away_name", "")
-    )
-    searched_username = normalize_username(username)
-
-    if home_name == searched_username:
+    if user_side == "home":
         target_team_id = str(
             line_score.get("home_mlb_team_id", "")
         )
-    elif away_name == searched_username:
+    elif user_side == "away":
         target_team_id = str(
             line_score.get("away_mlb_team_id", "")
         )
     else:
+        home_name = normalize_username(
+            line_score.get("home_name", "")
+        )
+        away_name = normalize_username(
+            line_score.get("away_name", "")
+        )
+        searched_username = normalize_username(
+            username
+        )
+
+        if home_name == searched_username:
+            target_team_id = str(
+                line_score.get(
+                    "home_mlb_team_id",
+                    "",
+                )
+            )
+        elif away_name == searched_username:
+            target_team_id = str(
+                line_score.get(
+                    "away_mlb_team_id",
+                    "",
+                )
+            )
+        else:
+            return None
+
+    if not target_team_id:
         return None
 
     for team_box in box_score:
@@ -293,10 +314,12 @@ def locate_team_box_for_username(
 def parse_live_log_stats_for_username(
     game_log: Dict[str, Any],
     username: str,
+    user_side: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     team_box = locate_team_box_for_username(
         game_log,
         username,
+        user_side=user_side,
     )
 
     if not team_box:
@@ -371,6 +394,17 @@ def fetch_and_parse_log_for_game(
         result["error"] = "Missing game id"
         return result
 
+    user_side = get_user_side(
+        game,
+        username,
+    )
+
+    if user_side not in {"home", "away"}:
+        result["error"] = (
+            "Could not attribute user side from game history"
+        )
+        return result
+
     try:
         session = create_live_session()
 
@@ -388,6 +422,7 @@ def fetch_and_parse_log_for_game(
         parsed_stats = parse_live_log_stats_for_username(
             game_log=game_log,
             username=username,
+            user_side=user_side,
         )
 
         if not parsed_stats:
