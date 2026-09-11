@@ -51,6 +51,55 @@ export type DashboardResponse = {
 };
 
 
+export type AnalyticsTrendGame = {
+  game_id: string;
+  display_date: string | null;
+  opponent_name: string | null;
+  opponent_team_name: string | null;
+  user_side: "home" | "away";
+  user_walks: number;
+  user_strikeouts: number;
+  opponent_walks: number;
+  opponent_strikeouts: number;
+};
+
+
+export type AnalyticsInningRow = {
+  inning: number;
+  games_reaching_inning: number;
+  user_innings_observed: number;
+  opponent_innings_observed: number;
+  user_runs: number;
+  opponent_runs: number;
+  user_runs_per_observed_inning: number | null;
+  opponent_runs_per_observed_inning: number | null;
+  run_diff_per_observed_inning: number | null;
+};
+
+
+export type AnalyticsTrendsResponse = {
+  limit: number;
+  plate_discipline: {
+    games_included: number;
+    summary: {
+      user_walks: number;
+      user_strikeouts: number;
+      opponent_walks: number;
+      opponent_strikeouts: number;
+      user_walks_per_game: number | null;
+      user_strikeouts_per_game: number | null;
+      opponent_walks_per_game: number | null;
+      opponent_strikeouts_per_game: number | null;
+    };
+    games: AnalyticsTrendGame[];
+  };
+  inning_scoring: {
+    games_included: number;
+    innings: AnalyticsInningRow[];
+  };
+};
+
+
 export type GameSummary = {
   id: string;
   display_date: string | null;
@@ -326,6 +375,19 @@ export async function getAppConfig(): Promise<AppConfigResponse> {
 
 export async function getDashboard(): Promise<DashboardResponse> {
   return apiFetch<DashboardResponse>("/dashboard");
+}
+
+
+export async function getAnalyticsTrends(
+  limit = 20
+): Promise<AnalyticsTrendsResponse> {
+  const searchParams = new URLSearchParams({
+    limit: String(limit),
+  });
+
+  return apiFetch<AnalyticsTrendsResponse>(
+    `/analytics/trends?${searchParams.toString()}`
+  );
 }
 
 

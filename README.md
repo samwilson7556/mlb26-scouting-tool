@@ -736,6 +736,7 @@ Useful local addresses:
 Backend: localhost:8000
 Health:  localhost:8000/health
 Docs:    localhost:8000/docs
+Frontend analytics: localhost:3000/analytics
 ```
 
 ---
