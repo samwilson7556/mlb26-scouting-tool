@@ -799,6 +799,26 @@ def get_game_detail(
         (game_id,),
     ).fetchall()
 
+    innings = conn.execute(
+        """
+        SELECT *
+        FROM game_innings
+        WHERE game_id = ?
+        ORDER BY inning
+        """,
+        (game_id,),
+    ).fetchall()
+
+    events = conn.execute(
+        """
+        SELECT *
+        FROM game_events
+        WHERE game_id = ?
+        ORDER BY source_index
+        """,
+        (game_id,),
+    ).fetchall()
+
     return {
         "game": row_to_dict(game),
         "game_log": (
@@ -817,6 +837,14 @@ def get_game_detail(
         "pitching_stats": [
             row_to_dict(row)
             for row in pitching_stats
+        ],
+        "innings": [
+            row_to_dict(row)
+            for row in innings
+        ],
+        "events": [
+            row_to_dict(row)
+            for row in events
         ],
     }
 

@@ -302,6 +302,67 @@ class ApiRouteIntegrationTests(unittest.TestCase):
             ),
         )
 
+        conn.executemany(
+            """
+            INSERT INTO game_innings (
+                game_id,
+                inning,
+                home_runs,
+                away_runs
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            [
+                (
+                    "game-detail",
+                    2,
+                    0,
+                    1,
+                ),
+                (
+                    "game-detail",
+                    1,
+                    2,
+                    0,
+                ),
+            ],
+        )
+
+        conn.executemany(
+            """
+            INSERT INTO game_events (
+                game_id,
+                source_index,
+                inning,
+                batting_side,
+                batting_team_name,
+                event_type,
+                raw_text
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "game-detail",
+                    2,
+                    2,
+                    "home",
+                    "Configured Team",
+                    "home_run",
+                    "Slugger homered to center.",
+                ),
+                (
+                    "game-detail",
+                    1,
+                    1,
+                    "home",
+                    "Configured Team",
+                    "walk",
+                    "Leadoff Batter walked.",
+                ),
+            ],
+        )
+
         conn.commit()
         conn.close()
 
@@ -323,6 +384,62 @@ class ApiRouteIntegrationTests(unittest.TestCase):
         self.assertEqual(
             payload["pitching_stats"][0]["player_name"],
             "Fixture Pitcher",
+        )
+        self.assertEqual(
+            [
+                inning["inning"]
+                for inning in payload["innings"]
+            ],
+            [1, 2],
+        )
+        self.assertEqual(
+            [
+                event["source_index"]
+                for event in payload["events"]
+            ],
+            [1, 2],
+        )
+        self.assertEqual(
+            [
+                event["event_type"]
+                for event in payload["events"]
+            ],
+            [
+                "walk",
+                "home_run",
+            ],
+        )
+
+    def test_game_detail_route_returns_empty_normalized_arrays(self):
+        self.insert_game(
+            game_id="game-empty-normalized",
+            display_date="2026-02-02 12:00:00",
+            opponent_name="EmptyOpponent",
+            opponent_team_name="Empty Team",
+            result="W",
+            user_is_home=True,
+            user_runs=1,
+            opponent_runs=0,
+        )
+
+        response = self.client.get(
+            "/games/game-empty-normalized"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        payload = response.json()
+
+        self.assertEqual(
+            payload["innings"],
+            [],
+        )
+        self.assertEqual(
+            payload["events"],
+            [],
         )
 
     def test_game_detail_route_returns_404(self):

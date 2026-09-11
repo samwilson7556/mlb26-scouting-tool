@@ -65,6 +65,7 @@ The repository includes automated tests for:
 - game-log response classification
 - game-log retry behavior
 - FastAPI route contracts and HTTP responses
+- normalized inning/event data in game-detail API responses
 - successful-log preservation
 - parsed box-score replacement
 
@@ -74,7 +75,7 @@ Run the test suite with:
 python -m unittest discover -s tests -v
 ```
 
-The current automated suite contains 85 tests.
+The current automated suite contains 86 tests.
 
 ---
 
@@ -1031,7 +1032,7 @@ python -m unittest discover -s tests -v
 The current automated suite contains:
 
 ```text
-85 tests
+86 tests
 ```
 
 The tests use temporary SQLite databases and temporary directories where needed.
