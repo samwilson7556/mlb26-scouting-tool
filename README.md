@@ -74,7 +74,7 @@ Run the test suite with:
 python -m unittest discover -s tests -v
 ```
 
-The current automated suite contains 63 tests.
+The current automated suite contains 80 tests.
 
 ---
 
@@ -977,7 +977,7 @@ python -m unittest discover -s tests -v
 The current automated suite contains:
 
 ```text
-63 tests
+80 tests
 ```
 
 The tests use temporary SQLite databases and temporary directories where needed.
