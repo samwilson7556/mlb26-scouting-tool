@@ -861,36 +861,59 @@ def get_opponents(
         """
     ).fetchall()
 
+    game_rows = conn.execute(
+        """
+        SELECT
+            opponent_name,
+            opponent_team_name,
+            home_name,
+            away_name,
+            home_runs,
+            away_runs
+        FROM games
+        WHERE opponent_name IS NOT NULL
+          AND opponent_name != ''
+        """
+    ).fetchall()
+
+    games_by_opponent: Dict[
+        tuple[str, Optional[str]],
+        List[Dict[str, Any]],
+    ] = {}
+
+    for game_row in game_rows:
+        game = row_to_dict(game_row)
+        key = (
+            game["opponent_name"],
+            game["opponent_team_name"],
+        )
+
+        games_by_opponent.setdefault(
+            key,
+            [],
+        ).append(game)
+
     opponents = []
 
     for row in rows:
         item = row_to_dict(row)
+        key = (
+            item["opponent_name"],
+            item["opponent_team_name"],
+        )
 
-        opponent_games = conn.execute(
-            """
-            SELECT
-                home_name,
-                away_name,
-                home_runs,
-                away_runs
-            FROM games
-            WHERE opponent_name = ?
-              AND opponent_team_name IS ?
-            """,
-            (
-                item["opponent_name"],
-                item["opponent_team_name"],
-            ),
-        ).fetchall()
+        opponent_games = (
+            games_by_opponent.get(
+                key,
+                [],
+            )
+        )
 
         (
             avg_runs_scored,
             avg_runs_allowed,
         ) = get_run_averages_for_configured_user(
-            [
-                row_to_dict(game)
-                for game in opponent_games
-            ]
+            opponent_games
         )
 
         item[

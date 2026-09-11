@@ -100,6 +100,36 @@ class ApiAggregateAttributionTests(unittest.TestCase):
         self.assertEqual(opponent["avg_runs_scored"], 5.0)
         self.assertEqual(opponent["avg_runs_allowed"], 2.5)
 
+    def test_opponents_uses_constant_query_count(self):
+        self.seed_marker_and_direct_games()
+        self.insert_game(
+            "game-3",
+            "ConfiguredUser",
+            "SecondRival",
+            5,
+            1,
+            "SecondRival",
+            "Second Rivals",
+        )
+
+        statements = []
+        self.conn.set_trace_callback(statements.append)
+
+        try:
+            with patch("src.scout.USERNAME", "ConfiguredUser"):
+                response = get_opponents(self.conn)
+        finally:
+            self.conn.set_trace_callback(None)
+
+        select_statements = [
+            statement
+            for statement in statements
+            if statement.lstrip().upper().startswith("SELECT")
+        ]
+
+        self.assertEqual(response["total"], 2)
+        self.assertEqual(len(select_statements), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
