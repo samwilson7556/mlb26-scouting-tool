@@ -64,6 +64,7 @@ The repository includes automated tests for:
 - SQLite schema migration
 - game-log response classification
 - game-log retry behavior
+- FastAPI route contracts and HTTP responses
 - successful-log preservation
 - parsed box-score replacement
 
@@ -73,7 +74,7 @@ Run the test suite with:
 python -m unittest discover -s tests -v
 ```
 
-The current automated suite contains 53 tests.
+The current automated suite contains 62 tests.
 
 ---
 
@@ -138,6 +139,7 @@ fastapi
 uvicorn[standard]
 pydantic
 python-dotenv
+httpx2
 ```
 
 ### Frontend
