@@ -30,6 +30,7 @@ from .parser import (
     safe_int,
     sum_csv_ints,
 )
+from .play_by_play import parse_game_log_text
 
 
 console = Console()
@@ -573,6 +574,12 @@ def save_game_log(
             sections,
         )
 
+        save_normalized_game_sections(
+            conn,
+            game_id,
+            sections,
+        )
+
     conn.commit()
 
     return api_status
@@ -992,6 +999,324 @@ def save_box_score_sections(
             )
 
 
+
+def _normalize_team_label(
+    value: Any,
+) -> str:
+    return " ".join(
+        str(value or "").split()
+    ).casefold()
+
+
+def infer_batting_side(
+    line_score: Dict[str, Any],
+    batting_team_name: Any,
+) -> str:
+    if not isinstance(
+        line_score,
+        dict,
+    ):
+        return "unknown"
+
+    batting_team = (
+        _normalize_team_label(
+            batting_team_name
+        )
+    )
+
+    if not batting_team:
+        return "unknown"
+
+    home_team = (
+        _normalize_team_label(
+            line_score.get(
+                "home_full_name"
+            )
+        )
+    )
+
+    away_team = (
+        _normalize_team_label(
+            line_score.get(
+                "away_full_name"
+            )
+        )
+    )
+
+    if (
+        home_team
+        and batting_team == home_team
+    ):
+        return "home"
+
+    if (
+        away_team
+        and batting_team == away_team
+    ):
+        return "away"
+
+    return "unknown"
+
+
+def save_inning_sections(
+    conn: sqlite3.Connection,
+    game_id: str,
+    sections: Dict[str, Any],
+) -> None:
+    """
+    Replace authoritative inning-by-inning run rows for one game.
+
+    These rows come from the structured line_score section rather than
+    the perspective-specific text game log.
+    """
+    conn.execute(
+        """
+        DELETE FROM game_innings
+        WHERE game_id = ?
+        """,
+        (game_id,),
+    )
+
+    line_score = sections.get(
+        "line_score",
+        {},
+    )
+
+    if not isinstance(
+        line_score,
+        dict,
+    ):
+        return
+
+    innings = safe_int(
+        line_score.get("innings")
+    )
+
+    if (
+        innings is None
+        or innings <= 0
+    ):
+        return
+
+    for inning in range(
+        1,
+        innings + 1,
+    ):
+        conn.execute(
+            """
+            INSERT INTO game_innings (
+                game_id,
+                inning,
+                home_runs,
+                away_runs
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                game_id,
+                inning,
+                safe_int(
+                    line_score.get(
+                        f"home_runs_{inning}"
+                    )
+                ),
+                safe_int(
+                    line_score.get(
+                        f"away_runs_{inning}"
+                    )
+                ),
+            ),
+        )
+
+
+def save_play_by_play_sections(
+    conn: sqlite3.Connection,
+    game_id: str,
+    sections: Dict[str, Any],
+) -> None:
+    """
+    Replace normalized text-game-log events for one game.
+
+    MLBTS currently exposes this text log from one batting perspective,
+    so batting_side is inferred conservatively from line_score team names.
+    Unknown attribution is retained as "unknown".
+    """
+    conn.execute(
+        """
+        DELETE FROM game_events
+        WHERE game_id = ?
+        """,
+        (game_id,),
+    )
+
+    text_log = sections.get(
+        "game_log",
+        "",
+    )
+
+    if not isinstance(
+        text_log,
+        str,
+    ):
+        return
+
+    if not text_log.strip():
+        return
+
+    line_score = sections.get(
+        "line_score",
+        {},
+    )
+
+    if not isinstance(
+        line_score,
+        dict,
+    ):
+        line_score = {}
+
+    parsed = parse_game_log_text(
+        text_log
+    )
+
+    for event in parsed["events"]:
+        batting_team_name = (
+            event.get(
+                "batting_team"
+            )
+        )
+
+        batting_side = (
+            infer_batting_side(
+                line_score,
+                batting_team_name,
+            )
+        )
+
+        conn.execute(
+            """
+            INSERT INTO game_events (
+                game_id,
+                source_index,
+                inning,
+                batting_side,
+                batting_team_name,
+                event_type,
+                player_name,
+                related_player_name,
+                raw_text,
+                is_plate_appearance,
+                is_hit,
+                is_out,
+                hit_bases,
+                outs_recorded,
+                fielding_code,
+                destination_base,
+                cause,
+                strikeout_type,
+                home_run_distance_ft,
+                terminal_pitch_type,
+                secondary_out,
+                parser_version
+            )
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+            """,
+            (
+                game_id,
+                event.get(
+                    "source_index"
+                ),
+                event.get("inning"),
+                batting_side,
+                batting_team_name,
+                event.get(
+                    "event_type"
+                ),
+                event.get(
+                    "player_name"
+                ),
+                event.get(
+                    "related_player_name"
+                ),
+                event.get(
+                    "raw_text",
+                    "",
+                ),
+                int(
+                    bool(
+                        event.get(
+                            "is_plate_appearance"
+                        )
+                    )
+                ),
+                int(
+                    bool(
+                        event.get(
+                            "is_hit"
+                        )
+                    )
+                ),
+                int(
+                    bool(
+                        event.get(
+                            "is_out"
+                        )
+                    )
+                ),
+                event.get(
+                    "hit_bases"
+                ),
+                event.get(
+                    "outs_recorded"
+                ),
+                event.get(
+                    "fielding_code"
+                ),
+                event.get(
+                    "destination_base"
+                ),
+                event.get("cause"),
+                event.get(
+                    "strikeout_type"
+                ),
+                event.get(
+                    "home_run_distance_ft"
+                ),
+                event.get(
+                    "terminal_pitch_type"
+                ),
+                int(
+                    bool(
+                        event.get(
+                            "secondary_out"
+                        )
+                    )
+                ),
+                1,
+            ),
+        )
+
+
+def save_normalized_game_sections(
+    conn: sqlite3.Connection,
+    game_id: str,
+    sections: Dict[str, Any],
+) -> None:
+    save_inning_sections(
+        conn,
+        game_id,
+        sections,
+    )
+
+    save_play_by_play_sections(
+        conn,
+        game_id,
+        sections,
+    )
+
+
 def get_game_ids_needing_pitching_outs_backfill(
     conn: sqlite3.Connection,
 ) -> List[str]:
@@ -1107,6 +1432,12 @@ def reparse_stored_game_logs(
             )
 
             save_box_score_sections(
+                conn,
+                game_id,
+                sections,
+            )
+
+            save_normalized_game_sections(
                 conn,
                 game_id,
                 sections,

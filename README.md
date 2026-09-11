@@ -74,7 +74,7 @@ Run the test suite with:
 python -m unittest discover -s tests -v
 ```
 
-The current automated suite contains 80 tests.
+The current automated suite contains 85 tests.
 
 ---
 
@@ -488,6 +488,60 @@ api_status
 raw_game_log_json
 raw_text_log
 ```
+
+
+### `game_innings`
+
+Stores authoritative inning-by-inning scoring from the structured MLBTS
+`line_score` section:
+
+```text
+game_id
+inning
+home_runs
+away_runs
+```
+
+These rows are safe to use for full-game scoring analysis because they come
+from the structured home/away line score rather than the perspective-specific
+text play-by-play.
+
+### `game_events`
+
+Stores normalized events parsed from the MLBTS text `game_log`:
+
+```text
+game_id
+source_index
+inning
+batting_side
+batting_team_name
+event_type
+player_name
+related_player_name
+raw_text
+is_plate_appearance
+is_hit
+is_out
+hit_bases
+outs_recorded
+fielding_code
+destination_base
+cause
+strikeout_type
+home_run_distance_ft
+terminal_pitch_type
+secondary_out
+parser_version
+```
+
+The current MLBTS text log represents one batting perspective rather than a
+complete two-sided play-by-play feed. `batting_side` is therefore inferred
+conservatively from the structured line-score team names and may be `unknown`
+if the names cannot be matched safely.
+
+Running `python -m src.main reparse-logs` rebuilds these normalized rows from
+already-stored successful raw game logs without making MLBTS network requests.
 
 ### `team_box_scores`
 
@@ -977,7 +1031,7 @@ python -m unittest discover -s tests -v
 The current automated suite contains:
 
 ```text
-80 tests
+85 tests
 ```
 
 The tests use temporary SQLite databases and temporary directories where needed.

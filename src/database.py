@@ -171,6 +171,55 @@ def init_db(
         """
     )
 
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS game_innings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id TEXT NOT NULL,
+            inning INTEGER NOT NULL,
+            home_runs INTEGER,
+            away_runs INTEGER,
+            UNIQUE(game_id, inning),
+            FOREIGN KEY(game_id)
+                REFERENCES games(id)
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS game_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id TEXT NOT NULL,
+            source_index INTEGER NOT NULL,
+            inning INTEGER NOT NULL,
+            batting_side TEXT NOT NULL,
+            batting_team_name TEXT,
+            event_type TEXT NOT NULL,
+            player_name TEXT,
+            related_player_name TEXT,
+            raw_text TEXT NOT NULL,
+            is_plate_appearance INTEGER NOT NULL DEFAULT 0,
+            is_hit INTEGER NOT NULL DEFAULT 0,
+            is_out INTEGER NOT NULL DEFAULT 0,
+            hit_bases INTEGER,
+            outs_recorded INTEGER,
+            fielding_code TEXT,
+            destination_base TEXT,
+            cause TEXT,
+            strikeout_type TEXT,
+            home_run_distance_ft INTEGER,
+            terminal_pitch_type TEXT,
+            secondary_out INTEGER NOT NULL DEFAULT 0,
+            parser_version INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(game_id, source_index),
+            FOREIGN KEY(game_id)
+                REFERENCES games(id)
+        )
+        """
+    )
+
     # Migration support for databases created before pitching_outs existed.
     ensure_column(
         conn,
