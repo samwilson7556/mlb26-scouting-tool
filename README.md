@@ -66,6 +66,7 @@ The repository includes automated tests for:
 - game-log retry behavior
 - FastAPI route contracts and HTTP responses
 - normalized inning/event data in game-detail API responses
+- K/BB and inning-scoring analytics
 - successful-log preservation
 - parsed box-score replacement
 
@@ -75,7 +76,7 @@ Run the test suite with:
 python -m unittest discover -s tests -v
 ```
 
-The current automated suite contains 86 tests.
+The current automated suite contains 91 tests.
 
 ---
 
@@ -749,6 +750,7 @@ GET  /config
 GET  /dashboard
 GET  /games
 GET  /games/{game_id}
+GET  /analytics/trends
 GET  /opponents
 GET  /opponents/{username}
 
@@ -757,6 +759,24 @@ POST /sync/logs
 POST /sync/all
 POST /live-scout
 ```
+
+`GET /analytics/trends` returns derived scouting data for the configured user.
+The optional `limit` query parameter controls how many recent games are
+considered, from 1 to 200, with a default of 20.
+
+The response includes:
+
+- chronological per-game walk and strikeout trends for the user and opponent
+- team-level K/BB summary totals and per-game averages
+- inning-by-inning runs scored and allowed
+- observed half-inning sample counts for each side, so unplayed bottom halves
+  and unavailable extra-inning scoring values are not silently treated as zero
+
+The K/BB data comes from structured team box scores. Inning scoring comes from
+the normalized structured `game_innings` rows rather than the perspective-only
+text play-by-play. Per-inning scoring rates use only non-null run values for
+that side.
+
 
 ### `GET /health`
 
@@ -1032,7 +1052,7 @@ python -m unittest discover -s tests -v
 The current automated suite contains:
 
 ```text
-86 tests
+91 tests
 ```
 
 The tests use temporary SQLite databases and temporary directories where needed.

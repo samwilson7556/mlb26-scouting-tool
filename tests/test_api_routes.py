@@ -448,6 +448,136 @@ class ApiRouteIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.json()["detail"], "Game not found")
 
+    def test_analytics_trends_route_returns_derived_data(self):
+        self.insert_game(
+            game_id="analytics-1",
+            display_date="2026-02-03 12:00:00",
+            opponent_name="TrendOpponent",
+            opponent_team_name="Trend Team",
+            result="W",
+            user_is_home=True,
+            user_runs=3,
+            opponent_runs=1,
+        )
+
+        conn = connect_db(self.db_path)
+        init_db(conn)
+
+        conn.executemany(
+            """
+            INSERT INTO team_box_scores (
+                game_id,
+                team_id,
+                team_name,
+                batting_bb,
+                batting_so
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "analytics-1",
+                    "user-team",
+                    "Configured Team",
+                    3,
+                    4,
+                ),
+                (
+                    "analytics-1",
+                    "opponent-team",
+                    "Trend Team",
+                    1,
+                    7,
+                ),
+            ],
+        )
+
+        conn.executemany(
+            """
+            INSERT INTO game_innings (
+                game_id,
+                inning,
+                home_runs,
+                away_runs
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            [
+                (
+                    "analytics-1",
+                    1,
+                    2,
+                    0,
+                ),
+                (
+                    "analytics-1",
+                    2,
+                    1,
+                    1,
+                ),
+            ],
+        )
+
+        conn.commit()
+        conn.close()
+
+        response = self.client.get(
+            "/analytics/trends",
+            params={
+                "limit": 1,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        payload = response.json()
+
+        self.assertEqual(
+            payload["limit"],
+            1,
+        )
+        self.assertEqual(
+            payload[
+                "plate_discipline"
+            ]["games_included"],
+            1,
+        )
+        self.assertEqual(
+            payload[
+                "plate_discipline"
+            ]["summary"][
+                "user_walks"
+            ],
+            3,
+        )
+        self.assertEqual(
+            payload[
+                "plate_discipline"
+            ]["summary"][
+                "opponent_strikeouts"
+            ],
+            7,
+        )
+        self.assertEqual(
+            payload[
+                "inning_scoring"
+            ]["innings"][0],
+            {
+                "inning": 1,
+                "games_reaching_inning": 1,
+                "user_innings_observed": 1,
+                "opponent_innings_observed": 1,
+                "user_runs": 2,
+                "opponent_runs": 0,
+                "user_runs_per_observed_inning": 2.0,
+                "opponent_runs_per_observed_inning": 0.0,
+                "run_diff_per_observed_inning": 2.0,
+            },
+        )
+
     def test_dashboard_route_returns_counts_and_record(self):
         self.insert_game(
             game_id="dash-1",
