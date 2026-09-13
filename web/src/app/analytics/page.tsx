@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import {
+  MatchupStrikeoutTeamCard,
+} from "@/components/matchup-strikeout-profile";
+import {
   AnalyticsInningRow,
   AnalyticsPlayersResponse,
   AnalyticsTrendGame,
@@ -246,6 +249,48 @@ export default function AnalyticsPage() {
                   </tbody>
                 </table>
               </div>
+            )}
+          </section>
+
+          <section className="card">
+            <SectionHeader
+              title="Your strikeout matchup profiles"
+              subtitle={
+                `${playerReport.games_included} `
+                + "games of pitcher-hand vs batter-side history; "
+                + "locations are batter-relative"
+              }
+            />
+
+            {!playerReport
+              .matchup_resolution_available ? (
+              <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-200">
+                MLB The Show handedness metadata
+                is unavailable, so matchup
+                classification could not be
+                calculated.
+              </div>
+            ) : playerReport.user_players.some(
+                (player) =>
+                  player.strikeouts > 0
+              ) ? (
+              <div className="mt-5">
+                <MatchupStrikeoutTeamCard
+                  title="Your Team Aggregate"
+                  players={
+                    playerReport
+                      .user_players
+                  }
+                />
+              </div>
+            ) : (
+              <EmptyState
+                text={
+                  "No hitter strikeout data "
+                  + "is available for the "
+                  + "selected game window."
+                }
+              />
             )}
           </section>
 

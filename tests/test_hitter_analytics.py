@@ -242,6 +242,355 @@ class HitterAggregationTests(
             ],
         )
 
+    def test_matchup_strikeout_profiles_track_coverage_and_locations(
+        self,
+    ):
+        bucket = create_hitter_bucket(
+            "Matchup Batter"
+        )
+
+        events = [
+            {
+                "event_type": "single",
+                "is_plate_appearance": True,
+                "is_hit": True,
+                "hit_bases": 1,
+                "matchup": "RvR",
+            },
+            {
+                "event_type": "strikeout",
+                "is_plate_appearance": True,
+                "is_hit": False,
+                "matchup": "RvR",
+                "terminal_pitch_type": "slider",
+                "terminal_pitch_location": "low_away",
+                "strikeout_type": "chasing",
+            },
+            {
+                "event_type": "walk",
+                "is_plate_appearance": True,
+                "is_hit": False,
+                "matchup": "RvL",
+            },
+            {
+                "event_type": "strikeout",
+                "is_plate_appearance": True,
+                "is_hit": False,
+                "matchup": "LvL",
+                "terminal_pitch_type": "sinker",
+                "terminal_pitch_location": "high_in",
+                "strikeout_type": "looking",
+            },
+            {
+                "event_type": "strikeout",
+                "is_plate_appearance": True,
+                "is_hit": False,
+                "terminal_pitch_type": "fastball",
+                "terminal_pitch_location": "low",
+                "strikeout_type": "chasing",
+            },
+        ]
+
+        for event in events:
+            apply_hitter_event(
+                bucket,
+                event,
+                game_id="game-1",
+            )
+
+        row = finalize_hitter_bucket(
+            bucket
+        )
+
+        profiles = row[
+            "matchup_strikeout_profiles"
+        ]
+
+        self.assertEqual(
+            profiles[
+                "classified_plate_appearances"
+            ],
+            4,
+        )
+
+        self.assertEqual(
+            profiles[
+                "unclassified_plate_appearances"
+            ],
+            1,
+        )
+
+        self.assertEqual(
+            profiles[
+                "coverage_pct"
+            ],
+            80.0,
+        )
+
+        self.assertEqual(
+            profiles[
+                "classified_strikeouts"
+            ],
+            2,
+        )
+
+        self.assertEqual(
+            profiles[
+                "unclassified_strikeouts"
+            ],
+            1,
+        )
+
+        self.assertEqual(
+            profiles[
+                "strikeout_coverage_pct"
+            ],
+            66.7,
+        )
+
+        rvr = profiles[
+            "matchups"
+        ]["RvR"]
+
+        self.assertEqual(
+            rvr["plate_appearances"],
+            2,
+        )
+
+        self.assertEqual(
+            rvr["strikeouts"],
+            1,
+        )
+
+        self.assertEqual(
+            rvr["strikeout_pct"],
+            50.0,
+        )
+
+        self.assertEqual(
+            rvr["with_location"],
+            1,
+        )
+
+        self.assertEqual(
+            rvr[
+                "location_coverage_pct"
+            ],
+            100.0,
+        )
+
+        self.assertEqual(
+            rvr["location_counts"],
+            {
+                "high_in": 0,
+                "high": 0,
+                "high_away": 0,
+                "inside": 0,
+                "middle": 0,
+                "outside": 0,
+                "low_in": 0,
+                "low": 0,
+                "low_away": 1,
+            },
+        )
+
+        self.assertEqual(
+            rvr["finishing_pitches"],
+            [
+                {
+                    "value": "slider",
+                    "count": 1,
+                    "pct": 100.0,
+                }
+            ],
+        )
+
+        rvl = profiles[
+            "matchups"
+        ]["RvL"]
+
+        self.assertEqual(
+            rvl["plate_appearances"],
+            1,
+        )
+
+        self.assertEqual(
+            rvl["strikeouts"],
+            0,
+        )
+
+        self.assertEqual(
+            rvl["strikeout_pct"],
+            0.0,
+        )
+
+        self.assertIsNone(
+            rvl[
+                "location_coverage_pct"
+            ]
+        )
+
+        lvl = profiles[
+            "matchups"
+        ]["LvL"]
+
+        self.assertEqual(
+            lvl["strikeouts"],
+            1,
+        )
+
+        self.assertEqual(
+            lvl["location_counts"][
+                "high_in"
+            ],
+            1,
+        )
+
+        lvr = profiles[
+            "matchups"
+        ]["LvR"]
+
+        self.assertEqual(
+            lvr["plate_appearances"],
+            0,
+        )
+
+        self.assertIsNone(
+            lvr["strikeout_pct"]
+        )
+
+    def test_matchup_location_tracks_finishing_pitch_breakdown(
+        self,
+    ):
+        bucket = create_hitter_bucket(
+            "Hover Batter"
+        )
+
+        events = [
+            {
+                "event_type": "strikeout",
+                "is_plate_appearance": True,
+                "matchup": "RvR",
+                "terminal_pitch_location": "low_away",
+                "terminal_pitch_type": "slider",
+            },
+            {
+                "event_type": "strikeout",
+                "is_plate_appearance": True,
+                "matchup": "RvR",
+                "terminal_pitch_location": "low_away",
+                "terminal_pitch_type": "slider",
+            },
+            {
+                "event_type": "strikeout",
+                "is_plate_appearance": True,
+                "matchup": "RvR",
+                "terminal_pitch_location": "low_away",
+                "terminal_pitch_type": "fastball",
+            },
+            {
+                "event_type": "strikeout",
+                "is_plate_appearance": True,
+                "matchup": "RvR",
+                "terminal_pitch_location": "low_away",
+                "terminal_pitch_type": None,
+            },
+        ]
+
+        for event in events:
+            apply_hitter_event(
+                bucket,
+                event,
+                game_id="hover-game",
+            )
+
+        row = finalize_hitter_bucket(
+            bucket
+        )
+
+        rvr = row[
+            "matchup_strikeout_profiles"
+        ][
+            "matchups"
+        ][
+            "RvR"
+        ]
+
+        self.assertEqual(
+            rvr[
+                "location_counts"
+            ][
+                "low_away"
+            ],
+            4,
+        )
+
+        self.assertEqual(
+            rvr[
+                "location_pitch_counts"
+            ][
+                "low_away"
+            ],
+            {
+                "slider": 2,
+                "fastball": 1,
+            },
+        )
+
+    def test_empty_matchup_profiles_have_stable_four_matchup_shape(
+        self,
+    ):
+        bucket = create_hitter_bucket(
+            "Empty Batter"
+        )
+
+        row = finalize_hitter_bucket(
+            bucket
+        )
+
+        profiles = row[
+            "matchup_strikeout_profiles"
+        ]
+
+        self.assertEqual(
+            list(
+                profiles[
+                    "matchups"
+                ].keys()
+            ),
+            [
+                "RvR",
+                "RvL",
+                "LvR",
+                "LvL",
+            ],
+        )
+
+        self.assertIsNone(
+            profiles["coverage_pct"]
+        )
+
+        for matchup in (
+            profiles[
+                "matchups"
+            ].values()
+        ):
+            self.assertEqual(
+                matchup[
+                    "plate_appearances"
+                ],
+                0,
+            )
+
+            self.assertEqual(
+                sum(
+                    matchup[
+                        "location_counts"
+                    ].values()
+                ),
+                0,
+            )
+
     def test_shared_bucket_sort_matches_scout_order(
         self,
     ):

@@ -201,6 +201,8 @@ def init_db(
             batting_team_name TEXT,
             event_type TEXT NOT NULL,
             player_name TEXT,
+            pitcher_name TEXT,
+            pitcher_is_starter INTEGER,
             related_player_name TEXT,
             raw_text TEXT NOT NULL,
             is_plate_appearance INTEGER NOT NULL DEFAULT 0,
@@ -246,6 +248,20 @@ def init_db(
         "game_events",
         "terminal_pitch_location",
         "TEXT",
+    )
+
+    ensure_column(
+        conn,
+        "game_events",
+        "pitcher_name",
+        "TEXT",
+    )
+
+    ensure_column(
+        conn,
+        "game_events",
+        "pitcher_is_starter",
+        "INTEGER",
     )
 
     conn.commit()

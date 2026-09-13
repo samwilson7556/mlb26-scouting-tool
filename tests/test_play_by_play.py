@@ -78,6 +78,88 @@ class PlayClassificationTests(unittest.TestCase):
             "7-4",
         )
 
+    def test_bunt_and_chop_singles_extract_player_name(
+        self,
+    ):
+        cases = [
+            (
+                (
+                    "Carroll bunted to third "
+                    "baseman for a single."
+                ),
+                "Carroll",
+                False,
+            ),
+            (
+                (
+                    "Lebron bunted and deflected "
+                    "off pitcher Schlittler for "
+                    "a single."
+                ),
+                "Lebron",
+                False,
+            ),
+            (
+                (
+                    "Albies chopped to shortstop "
+                    "for a single."
+                ),
+                "Albies",
+                False,
+            ),
+            (
+                (
+                    "McGee bunted to first baseman "
+                    "for a single, out while "
+                    "advancing extra bases (3U)."
+                ),
+                "McGee",
+                True,
+            ),
+        ]
+
+        for (
+            statement,
+            expected_name,
+            expected_secondary_out,
+        ) in cases:
+            with self.subTest(
+                statement=statement
+            ):
+                event = (
+                    classify_play_statement(
+                        statement
+                    )
+                )
+
+                self.assertEqual(
+                    event[
+                        "event_type"
+                    ],
+                    "single",
+                )
+
+                self.assertEqual(
+                    event[
+                        "player_name"
+                    ],
+                    expected_name,
+                )
+
+                self.assertEqual(
+                    event[
+                        "hit_bases"
+                    ],
+                    1,
+                )
+
+                self.assertEqual(
+                    event[
+                        "secondary_out"
+                    ],
+                    expected_secondary_out,
+                )
+
     def test_extra_base_hits_and_home_run_distance(self):
         double_event = (
             classify_play_statement(
@@ -1006,6 +1088,84 @@ class GameLogParsingTests(unittest.TestCase):
                 "fielding_code"
             ],
             "2-5",
+        )
+
+    def test_pitcher_context_uses_chronological_inning_order(self):
+        raw = (
+            "Inning 2: "
+            "Hoosiers batting. "
+            "Reliever pitching. "
+            "Second Batter struck out on a slider. "
+            "Runs: 0 Hits: 0 Walks: 0 "
+            "Errors: 0 Pitches: 4 "
+            "Runners Left On: 0 "
+            "Inning 1: "
+            "Hoosiers batting. "
+            "Starter pitching. "
+            "First Batter struck out on a fastball. "
+            "Runs: 0 Hits: 0 Walks: 0 "
+            "Errors: 0 Pitches: 4 "
+            "Runners Left On: 0"
+        )
+
+        parsed = parse_game_log_text(
+            raw
+        )
+
+        # Source order remains unchanged even though pitcher
+        # state is reconstructed chronologically.
+        self.assertEqual(
+            [
+                event["inning"]
+                for event in (
+                    parsed["events"]
+                )
+            ],
+            [
+                2,
+                2,
+                1,
+                1,
+            ],
+        )
+
+        strikeouts = {
+            event["inning"]: event
+            for event in (
+                parsed["events"]
+            )
+            if (
+                event[
+                    "event_type"
+                ]
+                == "strikeout"
+            )
+        }
+
+        self.assertEqual(
+            strikeouts[1][
+                "pitcher_name"
+            ],
+            "Starter",
+        )
+
+        self.assertTrue(
+            strikeouts[1][
+                "pitcher_is_starter"
+            ]
+        )
+
+        self.assertEqual(
+            strikeouts[2][
+                "pitcher_name"
+            ],
+            "Reliever",
+        )
+
+        self.assertFalse(
+            strikeouts[2][
+                "pitcher_is_starter"
+            ]
         )
 
     def test_unknown_statements_are_retained(self):

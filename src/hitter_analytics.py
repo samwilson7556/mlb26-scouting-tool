@@ -11,6 +11,39 @@ TRACKED_NON_PA_EVENTS = {
 }
 
 
+MATCHUP_KEYS = (
+    "RvR",
+    "RvL",
+    "LvR",
+    "LvL",
+)
+
+
+MATCHUP_LOCATION_KEYS = (
+    "high_in",
+    "high",
+    "high_away",
+    "inside",
+    "middle",
+    "outside",
+    "low_in",
+    "low",
+    "low_away",
+)
+
+
+def _create_matchup_bucket(
+) -> Dict[str, Any]:
+    return {
+        "plate_appearances": 0,
+        "strikeouts": 0,
+        "_strikeout_pitches": {},
+        "_strikeout_locations": {},
+        "_strikeout_location_pitches": {},
+        "_strikeout_styles": {},
+    }
+
+
 def hitter_event_is_relevant(
     event: Dict[str, Any],
 ) -> bool:
@@ -65,6 +98,12 @@ def create_hitter_bucket(
         "_strikeout_pitches": {},
         "_strikeout_locations": {},
         "_strikeout_styles": {},
+        "_matchups": {
+            key: (
+                _create_matchup_bucket()
+            )
+            for key in MATCHUP_KEYS
+        },
     }
 
 
@@ -159,6 +198,29 @@ def apply_hitter_event(
         or ""
     )
 
+    matchup = str(
+        event.get(
+            "matchup"
+        )
+        or ""
+    ).strip()
+
+    matchup_bucket = None
+
+    if (
+        is_plate_appearance
+        and matchup in MATCHUP_KEYS
+    ):
+        matchup_bucket = (
+            bucket[
+                "_matchups"
+            ][matchup]
+        )
+
+        matchup_bucket[
+            "plate_appearances"
+        ] += 1
+
     if is_plate_appearance:
         bucket[
             "plate_appearances"
@@ -247,6 +309,71 @@ def apply_hitter_event(
                 "strikeout_type"
             ),
         )
+
+        if matchup_bucket is not None:
+            matchup_bucket[
+                "strikeouts"
+            ] += 1
+
+            _increment_category(
+                matchup_bucket[
+                    "_strikeout_pitches"
+                ],
+                event.get(
+                    "terminal_pitch_type"
+                ),
+            )
+
+            _increment_category(
+                matchup_bucket[
+                    "_strikeout_locations"
+                ],
+                event.get(
+                    "terminal_pitch_location"
+                ),
+            )
+
+            location = str(
+                event.get(
+                    "terminal_pitch_location"
+                )
+                or ""
+            ).strip()
+
+            pitch_type = str(
+                event.get(
+                    "terminal_pitch_type"
+                )
+                or ""
+            ).strip()
+
+            if (
+                location
+                in MATCHUP_LOCATION_KEYS
+                and pitch_type
+            ):
+                location_pitch_counts = (
+                    matchup_bucket[
+                        "_strikeout_location_pitches"
+                    ].setdefault(
+                        location,
+                        {},
+                    )
+                )
+
+                _increment_category(
+                    location_pitch_counts,
+                    pitch_type,
+                )
+
+            _increment_category(
+                matchup_bucket[
+                    "_strikeout_styles"
+                ],
+                event.get(
+                    "strikeout_type"
+                ),
+            )
 
     elif event_type == "sacrifice_fly":
         bucket[
@@ -413,6 +540,179 @@ def finalize_hitter_bucket(
                 style_counts
             )
         ),
+    }
+
+    matchup_rows = {}
+
+    classified_plate_appearances = 0
+    classified_strikeouts = 0
+
+    for matchup in MATCHUP_KEYS:
+        matchup_bucket = (
+            bucket[
+                "_matchups"
+            ][matchup]
+        )
+
+        matchup_pa = (
+            matchup_bucket[
+                "plate_appearances"
+            ]
+        )
+
+        matchup_strikeouts = (
+            matchup_bucket[
+                "strikeouts"
+            ]
+        )
+
+        matchup_pitch_counts = (
+            matchup_bucket[
+                "_strikeout_pitches"
+            ]
+        )
+
+        matchup_location_counts = (
+            matchup_bucket[
+                "_strikeout_locations"
+            ]
+        )
+
+        matchup_style_counts = (
+            matchup_bucket[
+                "_strikeout_styles"
+            ]
+        )
+
+        matchup_location_pitch_counts = (
+            matchup_bucket[
+                "_strikeout_location_pitches"
+            ]
+        )
+
+        located_strikeouts = sum(
+            matchup_location_counts.values()
+        )
+
+        classified_plate_appearances += (
+            matchup_pa
+        )
+
+        classified_strikeouts += (
+            matchup_strikeouts
+        )
+
+        matchup_rows[
+            matchup
+        ] = {
+            "plate_appearances": matchup_pa,
+            "strikeouts": (
+                matchup_strikeouts
+            ),
+            "strikeout_pct": (
+                _percentage(
+                    matchup_strikeouts,
+                    matchup_pa,
+                )
+            ),
+            "with_finishing_pitch": (
+                sum(
+                    matchup_pitch_counts.values()
+                )
+            ),
+            "with_location": (
+                located_strikeouts
+            ),
+            "location_coverage_pct": (
+                _percentage(
+                    located_strikeouts,
+                    matchup_strikeouts,
+                )
+            ),
+            "with_style": (
+                sum(
+                    matchup_style_counts.values()
+                )
+            ),
+            "location_counts": {
+                location: (
+                    matchup_location_counts.get(
+                        location,
+                        0,
+                    )
+                )
+                for location
+                in MATCHUP_LOCATION_KEYS
+            },
+            "location_pitch_counts": {
+                location: dict(
+                    sorted(
+                        matchup_location_pitch_counts.get(
+                            location,
+                            {},
+                        ).items(),
+                        key=lambda item: (
+                            -item[1],
+                            item[0],
+                        ),
+                    )
+                )
+                for location
+                in MATCHUP_LOCATION_KEYS
+            },
+            "finishing_pitches": (
+                _category_breakdown(
+                    matchup_pitch_counts
+                )
+            ),
+            "locations": (
+                _category_breakdown(
+                    matchup_location_counts
+                )
+            ),
+            "styles": (
+                _category_breakdown(
+                    matchup_style_counts
+                )
+            ),
+        }
+
+    row[
+        "matchup_strikeout_profiles"
+    ] = {
+        "classified_plate_appearances": (
+            classified_plate_appearances
+        ),
+        "unclassified_plate_appearances": (
+            max(
+                0,
+                plate_appearances
+                - classified_plate_appearances,
+            )
+        ),
+        "coverage_pct": (
+            _percentage(
+                classified_plate_appearances,
+                plate_appearances,
+            )
+        ),
+        "classified_strikeouts": (
+            classified_strikeouts
+        ),
+        "unclassified_strikeouts": (
+            max(
+                0,
+                bucket["strikeouts"]
+                - classified_strikeouts,
+            )
+        ),
+        "strikeout_coverage_pct": (
+            _percentage(
+                classified_strikeouts,
+                bucket["strikeouts"],
+            )
+        ),
+        "matchups": matchup_rows,
     }
 
     return row

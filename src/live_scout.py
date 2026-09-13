@@ -9,7 +9,13 @@ import requests
 from rich.console import Console
 from rich.table import Table
 
-from .config import BASE_URL, EXPORT_DIR, MODE, REQUEST_DELAY_SECONDS
+from .config import (
+    BASE_URL,
+    CARD_CATALOG_CACHE_PATH,
+    EXPORT_DIR,
+    MODE,
+    REQUEST_DELAY_SECONDS,
+)
 from .hitter_analytics import (
     apply_hitter_event,
     create_hitter_bucket,
@@ -32,6 +38,14 @@ from .parser import (
 )
 from .play_by_play import (
     parse_game_log_text,
+)
+from .player_handedness import (
+    BatterPositionResolver,
+    HandednessResolver,
+    box_score_batter_entries,
+)
+from .mlbts_catalog import (
+    get_handedness_resolver,
 )
 
 
@@ -771,6 +785,9 @@ def fetch_and_parse_log_for_game(
     game: Dict[str, Any],
     username: str,
     platform: str,
+    handedness_resolver: Optional[
+        HandednessResolver
+    ] = None,
 ) -> Dict[str, Any]:
     """
     Worker used by ThreadPoolExecutor.
@@ -846,6 +863,98 @@ def fetch_and_parse_log_for_game(
                 game,
             )
         )
+
+        if handedness_resolver is not None:
+            sections = (
+                extract_game_sections(
+                    game_log
+                )
+            )
+
+            position_resolver = (
+                BatterPositionResolver(
+                    box_score_batter_entries(
+                        sections.get(
+                            "box_score",
+                            [],
+                        )
+                    )
+                )
+            )
+
+            for event in (
+                normalized_events
+            ):
+                if not isinstance(
+                    event,
+                    dict,
+                ):
+                    continue
+
+                if not bool(
+                    safe_int(
+                        event.get(
+                            "is_plate_appearance"
+                        )
+                    )
+                ):
+                    continue
+
+                player_name = " ".join(
+                    str(
+                        event.get(
+                            "player_name"
+                        )
+                        or ""
+                    ).split()
+                )
+
+                if not player_name:
+                    continue
+
+                batter_position = (
+                    position_resolver.resolve(
+                        team_name=(
+                            event.get(
+                                "batting_team"
+                            )
+                        ),
+                        player_name=(
+                            player_name
+                        ),
+                    )
+                )
+
+                matchup_result = (
+                    handedness_resolver.resolve_matchup(
+                        batter_name=(
+                            player_name
+                        ),
+                        pitcher_name=(
+                            event.get(
+                                "pitcher_name"
+                            )
+                        ),
+                        batter_position=(
+                            batter_position
+                        ),
+                        pitcher_is_starter=(
+                            event.get(
+                                "pitcher_is_starter"
+                            )
+                        ),
+                    )
+                )
+
+                event[
+                    "batter_position"
+                ] = batter_position
+
+                event[
+                    "matchup"
+                ] = matchup_result.get(
+                    "matchup"
+                )
 
         result["success"] = True
         result["stats"] = parsed_stats
@@ -944,6 +1053,9 @@ def fetch_live_log_stats_concurrently(
     username: str,
     platform: str,
     max_workers: int,
+    handedness_resolver: Optional[
+        HandednessResolver
+    ] = None,
 ) -> Dict[str, Any]:
     log_stats: Dict[str, Any] = {
         "logs_requested": True,
@@ -959,6 +1071,10 @@ def fetch_live_log_stats_concurrently(
         "worker_count": 0,
         "game_log_platform": (
             platform.strip().lower()
+        ),
+        "matchup_resolution_available": (
+            handedness_resolver
+            is not None
         ),
         "hitter_profiles": {
             "games_included": 0,
@@ -1023,6 +1139,7 @@ def fetch_live_log_stats_concurrently(
                 game,
                 username,
                 resolved_platform,
+                handedness_resolver,
             )
             for game in games
         ]
@@ -1268,12 +1385,36 @@ def build_live_scout_report(
         )
 
     if config.include_logs:
+        handedness_resolver = None
+
+        try:
+            handedness_resolver = (
+                get_handedness_resolver(
+                    cache_path=(
+                        CARD_CATALOG_CACHE_PATH
+                    ),
+                    base_url=BASE_URL,
+                )
+            )
+        except Exception as exc:
+            console.print(
+                "[yellow]"
+                "Matchup handedness metadata "
+                "is unavailable; continuing "
+                "without matchup classification. "
+                f"({exc})"
+                "[/yellow]"
+            )
+
         log_stats = (
             fetch_live_log_stats_concurrently(
                 games=recent_games,
                 username=config.username,
                 platform=history_platform,
                 max_workers=config.log_workers,
+                handedness_resolver=(
+                    handedness_resolver
+                ),
             )
         )
     else:
@@ -1291,6 +1432,9 @@ def build_live_scout_report(
             "worker_count": 0,
             "game_log_platform": (
                 history_platform
+            ),
+            "matchup_resolution_available": (
+                False
             ),
             "hitter_profiles": {
                 "games_included": 0,

@@ -190,6 +190,22 @@ class DatabaseSchemaTests(
             )
         )
 
+        self.assertTrue(
+            column_exists(
+                self.conn,
+                "game_events",
+                "pitcher_name",
+            )
+        )
+
+        self.assertTrue(
+            column_exists(
+                self.conn,
+                "game_events",
+                "pitcher_is_starter",
+            )
+        )
+
 
 class LegacyDatabaseMigrationTests(
     unittest.TestCase
@@ -318,6 +334,22 @@ class LegacyDatabaseMigrationTests(
                     conn,
                     "game_events",
                     "terminal_pitch_location",
+                )
+            )
+
+            self.assertTrue(
+                column_exists(
+                    conn,
+                    "game_events",
+                    "pitcher_name",
+                )
+            )
+
+            self.assertTrue(
+                column_exists(
+                    conn,
+                    "game_events",
+                    "pitcher_is_starter",
                 )
             )
 
@@ -1006,6 +1038,8 @@ class NormalizedGamePersistenceTests(
                     batting_side,
                     event_type,
                     player_name,
+                    pitcher_name,
+                    pitcher_is_starter,
                     terminal_pitch_location,
                     parser_version
                 FROM game_events
@@ -1044,10 +1078,31 @@ class NormalizedGamePersistenceTests(
             "low_away",
         )
 
+        self.assertEqual(
+            event_rows[1][
+                "pitcher_name"
+            ],
+            "Test Pitcher",
+        )
+
+        self.assertEqual(
+            event_rows[-1][
+                "pitcher_name"
+            ],
+            "Test Pitcher",
+        )
+
+        self.assertEqual(
+            event_rows[-1][
+                "pitcher_is_starter"
+            ],
+            1,
+        )
+
         self.assertTrue(
             all(
                 row["parser_version"]
-                == 4
+                == 5
                 for row in event_rows
             )
         )

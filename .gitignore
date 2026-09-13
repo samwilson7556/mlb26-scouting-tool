@@ -18,6 +18,7 @@ data/mlb26_games.sqlite3
 data/*.sqlite3
 data/raw_game_logs/
 data/exports/
+data/cache/
 *.db
 *.sqlite
 *.sqlite3

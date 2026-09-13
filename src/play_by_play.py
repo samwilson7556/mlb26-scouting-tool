@@ -415,7 +415,7 @@ def classify_play_statement(
             statement,
             (
                 r"^(.+?)\s+"
-                r"(?:lined|grounded|hit|singled)\b"
+                r"(?:lined|grounded|hit|singled|bunted|chopped)\b"
             ),
         )
 
@@ -1387,6 +1387,169 @@ def _split_batting_sections(
     return sections
 
 
+def _annotate_pitcher_context(
+    innings: List[Dict[str, Any]],
+) -> None:
+    """
+    Attach the active pitcher to every parsed plate appearance.
+
+    MLBTS game logs are not guaranteed to list inning blocks in
+    chronological order. Pitcher state therefore has to be reconstructed
+    by walking parsed inning blocks from inning 1 forward.
+
+    The original innings/events lists are not reordered. The event
+    dictionaries are mutated in place so source_index and source ordering
+    remain unchanged.
+    """
+    active_pitcher: Dict[
+        str,
+        Dict[str, Any],
+    ] = {}
+
+    pitcher_counts: Dict[
+        str,
+        int,
+    ] = {}
+
+    chronological_innings = sorted(
+        innings,
+        key=lambda item: int(
+            item.get(
+                "inning",
+                0,
+            )
+            or 0
+        ),
+    )
+
+    for inning_block in chronological_innings:
+        batting_team_key = " ".join(
+            str(
+                inning_block.get(
+                    "batting_team"
+                )
+                or ""
+            ).split()
+        ).casefold()
+
+        if not batting_team_key:
+            continue
+
+        inning_events = inning_block.get(
+            "events",
+            [],
+        )
+
+        if not isinstance(
+            inning_events,
+            list,
+        ):
+            continue
+
+        for event in inning_events:
+            if not isinstance(
+                event,
+                dict,
+            ):
+                continue
+
+            event_type = str(
+                event.get(
+                    "event_type"
+                )
+                or ""
+            )
+
+            if event_type == "pitcher_marker":
+                pitcher_name = " ".join(
+                    str(
+                        event.get(
+                            "player_name"
+                        )
+                        or ""
+                    ).split()
+                )
+
+                if not pitcher_name:
+                    continue
+
+                current = active_pitcher.get(
+                    batting_team_key
+                )
+
+                # Some logs can repeat the current pitcher marker.
+                # Do not treat an identical repeated marker as a
+                # pitching change.
+                if (
+                    current
+                    and str(
+                        current.get(
+                            "pitcher_name"
+                        )
+                        or ""
+                    ).casefold()
+                    == pitcher_name.casefold()
+                ):
+                    continue
+
+                pitcher_count = (
+                    pitcher_counts.get(
+                        batting_team_key,
+                        0,
+                    )
+                    + 1
+                )
+
+                pitcher_counts[
+                    batting_team_key
+                ] = pitcher_count
+
+                active_pitcher[
+                    batting_team_key
+                ] = {
+                    "pitcher_name": (
+                        pitcher_name
+                    ),
+                    "pitcher_is_starter": (
+                        pitcher_count == 1
+                    ),
+                }
+
+                continue
+
+            if not event.get(
+                "is_plate_appearance"
+            ):
+                continue
+
+            context = active_pitcher.get(
+                batting_team_key
+            )
+
+            if context is None:
+                event[
+                    "pitcher_name"
+                ] = None
+
+                event[
+                    "pitcher_is_starter"
+                ] = None
+
+                continue
+
+            event[
+                "pitcher_name"
+            ] = context[
+                "pitcher_name"
+            ]
+
+            event[
+                "pitcher_is_starter"
+            ] = context[
+                "pitcher_is_starter"
+            ]
+
+
 def parse_game_log_text(
     value: str,
 ) -> Dict[str, Any]:
@@ -1589,6 +1752,10 @@ def parse_game_log_text(
                     "events": inning_events,
                 }
             )
+
+    _annotate_pitcher_context(
+        innings
+    )
 
     return {
         "innings": innings,

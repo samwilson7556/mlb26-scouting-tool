@@ -8,6 +8,10 @@ from .hitter_analytics import (
     hitter_event_is_relevant,
 )
 from .parser import get_user_side, safe_int
+from .player_handedness import (
+    BatterPositionResolver,
+    HandednessResolver,
+)
 
 
 def _normalize_team_name(
@@ -251,6 +255,63 @@ def _load_recent_games_with_events(
     ]
 
 
+def _load_batter_position_entries(
+    conn: sqlite3.Connection,
+    game_ids: List[str],
+) -> Dict[str, List[Dict[str, Any]]]:
+    if not game_ids:
+        return {}
+
+    placeholders = ", ".join(
+        "?"
+        for _ in game_ids
+    )
+
+    rows = conn.execute(
+        f"""
+        SELECT
+            game_id,
+            team_name,
+            player_name
+        FROM player_batting_stats
+        WHERE game_id IN ({placeholders})
+        ORDER BY
+            game_id,
+            team_name,
+            player_name
+        """,
+        game_ids,
+    ).fetchall()
+
+    grouped: Dict[
+        str,
+        List[Dict[str, Any]],
+    ] = {}
+
+    for row in rows:
+        item = dict(row)
+
+        grouped.setdefault(
+            item["game_id"],
+            [],
+        ).append(
+            {
+                "team_name": (
+                    item.get(
+                        "team_name"
+                    )
+                ),
+                "player_name": (
+                    item.get(
+                        "player_name"
+                    )
+                ),
+            }
+        )
+
+    return grouped
+
+
 def _load_game_events(
     conn: sqlite3.Connection,
     game_ids: List[str],
@@ -272,6 +333,8 @@ def _load_game_events(
             batting_team_name,
             event_type,
             player_name,
+            pitcher_name,
+            pitcher_is_starter,
             is_plate_appearance,
             is_hit,
             hit_bases,
@@ -331,6 +394,9 @@ def get_player_event_analytics(
     username: str,
     limit: int = 20,
     opponent_name: Optional[str] = None,
+    handedness_resolver: Optional[
+        HandednessResolver
+    ] = None,
 ) -> Dict[str, Any]:
     """
     Aggregate normalized offensive events by player.
@@ -358,13 +424,34 @@ def get_player_event_analytics(
         opponent_name=opponent_name,
     )
 
+    game_ids = [
+        game["id"]
+        for game in games
+    ]
+
     events_by_game = _load_game_events(
         conn,
-        [
-            game["id"]
-            for game in games
-        ],
+        game_ids,
     )
+
+    position_entries_by_game = (
+        _load_batter_position_entries(
+            conn,
+            game_ids,
+        )
+    )
+
+    position_resolvers = {
+        game_id: (
+            BatterPositionResolver(
+                position_entries_by_game.get(
+                    game_id,
+                    [],
+                )
+            )
+        )
+        for game_id in game_ids
+    }
 
     player_buckets: Dict[
         str,
@@ -436,6 +523,73 @@ def get_player_event_analytics(
                 )
                 or "Unknown Team"
             )
+
+            if (
+                handedness_resolver
+                is not None
+                and bool(
+                    safe_int(
+                        event.get(
+                            "is_plate_appearance"
+                        )
+                    )
+                )
+            ):
+                position_resolver = (
+                    position_resolvers.get(
+                        game["id"]
+                    )
+                )
+
+                batter_position = (
+                    position_resolver.resolve(
+                        team_name=team_name,
+                        player_name=(
+                            player_name
+                        ),
+                    )
+                    if position_resolver
+                    is not None
+                    else None
+                )
+
+                matchup_result = (
+                    handedness_resolver.resolve_matchup(
+                        batter_name=(
+                            player_name
+                        ),
+                        pitcher_name=(
+                            event.get(
+                                "pitcher_name"
+                            )
+                        ),
+                        batter_position=(
+                            batter_position
+                        ),
+                        pitcher_is_starter=(
+                            bool(
+                                event.get(
+                                    "pitcher_is_starter"
+                                )
+                            )
+                            if event.get(
+                                "pitcher_is_starter"
+                            )
+                            is not None
+                            else None
+                        ),
+                    )
+                )
+
+                event[
+                    "batter_position"
+                ] = batter_position
+
+                event[
+                    "matchup"
+                ] = matchup_result.get(
+                    "matchup"
+                )
 
             normalized_player_name = (
                 player_name.casefold()

@@ -27,6 +27,18 @@ class ApiRouteIntegrationTests(unittest.TestCase):
         self.db_path_patch = patch.object(api, "DB_PATH", self.db_path)
         self.db_path_patch.start()
 
+        self.handedness_patch = (
+            patch.object(
+                api,
+                "get_handedness_resolver",
+                return_value=None,
+            )
+        )
+
+        self.mock_get_handedness_resolver = (
+            self.handedness_patch.start()
+        )
+
         with api._sync_job_lock:
             api._sync_jobs.clear()
             api._active_sync_job_id = None
@@ -43,6 +55,7 @@ class ApiRouteIntegrationTests(unittest.TestCase):
             api._active_sync_job_id = None
             api._latest_sync_job_id = None
 
+        self.handedness_patch.stop()
         self.db_path_patch.stop()
         self.temp_dir.cleanup()
 
@@ -809,6 +822,14 @@ class ApiRouteIntegrationTests(unittest.TestCase):
             payload["games_included"],
             1,
         )
+
+        self.assertFalse(
+            payload[
+                "matchup_resolution_available"
+            ]
+        )
+
+        self.mock_get_handedness_resolver.assert_called_once()
 
         self.assertEqual(
             len(payload["user_players"]),

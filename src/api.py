@@ -20,6 +20,8 @@ from .collector import (
     sync_game_logs,
 )
 from .config import (
+    BASE_URL,
+    CARD_CATALOG_CACHE_PATH,
     DB_PATH,
     MODE,
     PLATFORM,
@@ -29,6 +31,12 @@ from .database import connect_db, init_db
 from .live_scout import (
     LiveScoutConfig,
     build_live_scout_report,
+)
+from .mlbts_catalog import (
+    get_handedness_resolver,
+)
+from .player_handedness import (
+    HandednessResolver,
 )
 from .scout import (
     get_run_averages_for_configured_user,
@@ -491,6 +499,21 @@ def row_to_dict(
     return dict(row)
 
 
+def _load_analytics_handedness_resolver(
+) -> Optional[HandednessResolver]:
+    try:
+        return get_handedness_resolver(
+            cache_path=(
+                CARD_CATALOG_CACHE_PATH
+            ),
+            base_url=BASE_URL,
+        )
+    except Exception:
+        # Core analytics remain usable if MLBTS is offline and
+        # no valid cached catalog is available.
+        return None
+
+
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {
@@ -911,13 +934,24 @@ def get_analytics_players(
         get_conn
     ),
 ) -> Dict[str, Any]:
+    handedness_resolver = (
+        _load_analytics_handedness_resolver()
+    )
+
     return {
         "limit": limit,
+        "matchup_resolution_available": (
+            handedness_resolver
+            is not None
+        ),
         **get_player_event_analytics(
             conn,
             USERNAME,
             limit=limit,
             opponent_name=opponent,
+            handedness_resolver=(
+                handedness_resolver
+            ),
         ),
     }
 

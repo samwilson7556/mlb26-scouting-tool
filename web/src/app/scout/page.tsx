@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
+import {
+  MatchupStrikeoutTeamCard,
+} from "@/components/matchup-strikeout-profile";
 import { formatGameDateTime } from "@/lib/dates";
 import {
   AnalyticsInningsResponse,
   AnalyticsPlayersResponse,
-  AnalyticsTendencyItem,
   getAnalyticsInnings,
   getAnalyticsPlayers,
   getAppConfig,
@@ -735,105 +737,36 @@ export default function ScoutPage() {
                     <div className="mt-6 border-t border-slate-800 pt-5">
                       <div>
                         <h3 className="text-base font-bold text-white">
-                          Strikeout Profiles
+                          Strikeout Matchup Profiles
                         </h3>
 
                         <p className="mt-1 text-sm text-slate-500">
-                          Recorded finishing
-                          pitch, location, and
-                          strikeout style.
+                          Pitcher-hand vs batter-side
+                          strikeout history. Locations
+                          are batter-relative: inside,
+                          middle, and away.
                         </p>
                       </div>
 
-                      <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-                        {opponentPlayerReport
-                          .opponent_players
-                          .filter(
-                            (player) =>
-                              player.strikeouts
-                              > 0
-                          )
-                          .map((player) => (
-                          <div
-                            key={
-                              `strikeout-${player.player_name.toLowerCase()}`
+                      {!opponentPlayerReport
+                        .matchup_resolution_available ? (
+                        <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-200">
+                          MLB The Show handedness
+                          metadata is unavailable, so
+                          matchup classification could
+                          not be calculated.
+                        </div>
+                      ) : (
+                        <div className="mt-4">
+                          <MatchupStrikeoutTeamCard
+                            title="Opponent Team Aggregate"
+                            players={
+                              opponentPlayerReport
+                                .opponent_players
                             }
-                            className="rounded-xl border border-slate-800 bg-slate-950/60 p-4"
-                          >
-                            <div className="flex items-center justify-between gap-4">
-                              <div className="font-bold text-white">
-                                {
-                                  player
-                                    .player_name
-                                }
-                              </div>
-
-                              <div className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs font-bold text-slate-300">
-                                {
-                                  player
-                                    .strikeouts
-                                }{" "}
-                                {player.strikeouts === 1
-                                  ? "K"
-                                  : "Ks"}
-                              </div>
-                            </div>
-
-                            <div className="mt-4 space-y-2 text-sm">
-                              <div className="grid grid-cols-[52px_1fr] gap-3">
-                                <span className="font-semibold text-slate-500">
-                                  Pitch
-                                </span>
-
-                                <span className="text-slate-300">
-                                  {formatStrikeoutTendency(
-                                    player
-                                      .strikeout_tendencies
-                                      .finishing_pitches,
-                                    player
-                                      .strikeout_tendencies
-                                      .with_finishing_pitch
-                                  )}
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-[52px_1fr] gap-3">
-                                <span className="font-semibold text-slate-500">
-                                  Zone
-                                </span>
-
-                                <span className="text-slate-300">
-                                  {formatStrikeoutTendency(
-                                    player
-                                      .strikeout_tendencies
-                                      .locations,
-                                    player
-                                      .strikeout_tendencies
-                                      .with_location
-                                  )}
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-[52px_1fr] gap-3">
-                                <span className="font-semibold text-slate-500">
-                                  Style
-                                </span>
-
-                                <span className="text-slate-300">
-                                  {formatStrikeoutTendency(
-                                    player
-                                      .strikeout_tendencies
-                                      .styles,
-                                    player
-                                      .strikeout_tendencies
-                                      .with_style
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1274,109 +1207,39 @@ export default function ScoutPage() {
                     <div className="mt-6 border-t border-slate-800 pt-5">
                       <div>
                         <h3 className="text-base font-bold text-white">
-                          Strikeout Profiles
+                          Strikeout Matchup Profiles
                         </h3>
 
                         <p className="mt-1 text-sm text-slate-500">
-                          Recorded finishing
-                          pitch, location, and
-                          strikeout style from
-                          the fetched live
-                          game logs.
+                          Pitcher-hand vs batter-side
+                          strikeout history from the
+                          fetched live game logs.
+                          Locations are batter-relative.
                         </p>
                       </div>
 
-                      <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-                        {liveReport
-                          .advanced_from_game_logs
-                          .hitter_profiles
-                          .players
-                          .filter(
-                            (player) =>
-                              player.strikeouts
-                              > 0
-                          )
-                          .map((player) => (
-                          <div
-                            key={
-                              `live-strikeout-${player.player_name.toLowerCase()}`
+                      {!liveReport
+                        .advanced_from_game_logs
+                        .matchup_resolution_available ? (
+                        <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-200">
+                          MLB The Show handedness
+                          metadata is unavailable, so
+                          matchup classification could
+                          not be calculated.
+                        </div>
+                      ) : (
+                        <div className="mt-4">
+                          <MatchupStrikeoutTeamCard
+                            title="Scouted Team Aggregate"
+                            players={
+                              liveReport
+                                .advanced_from_game_logs
+                                .hitter_profiles
+                                .players
                             }
-                            className="rounded-xl border border-slate-800 bg-slate-950/60 p-4"
-                          >
-                            <div className="flex items-center justify-between gap-4">
-                              <div className="font-bold text-white">
-                                {
-                                  player
-                                    .player_name
-                                }
-                              </div>
-
-                              <div className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs font-bold text-slate-300">
-                                {
-                                  player
-                                    .strikeouts
-                                }{" "}
-                                {player.strikeouts === 1
-                                  ? "K"
-                                  : "Ks"}
-                              </div>
-                            </div>
-
-                            <div className="mt-4 space-y-2 text-sm">
-                              <div className="grid grid-cols-[52px_1fr] gap-3">
-                                <span className="font-semibold text-slate-500">
-                                  Pitch
-                                </span>
-
-                                <span className="text-slate-300">
-                                  {formatStrikeoutTendency(
-                                    player
-                                      .strikeout_tendencies
-                                      .finishing_pitches,
-                                    player
-                                      .strikeout_tendencies
-                                      .with_finishing_pitch
-                                  )}
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-[52px_1fr] gap-3">
-                                <span className="font-semibold text-slate-500">
-                                  Zone
-                                </span>
-
-                                <span className="text-slate-300">
-                                  {formatStrikeoutTendency(
-                                    player
-                                      .strikeout_tendencies
-                                      .locations,
-                                    player
-                                      .strikeout_tendencies
-                                      .with_location
-                                  )}
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-[52px_1fr] gap-3">
-                                <span className="font-semibold text-slate-500">
-                                  Style
-                                </span>
-
-                                <span className="text-slate-300">
-                                  {formatStrikeoutTendency(
-                                    player
-                                      .strikeout_tendencies
-                                      .styles,
-                                    player
-                                      .strikeout_tendencies
-                                      .with_style
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1745,44 +1608,6 @@ function formatRunDiff(
   return value > 0
     ? `+${formatted}`
     : formatted;
-}
-
-
-function formatTendencyValue(
-  value: string
-): string {
-  return value
-    .split("_")
-    .map((part) => (
-      part.length === 0
-        ? part
-        : (
-          part.charAt(0).toUpperCase()
-          + part.slice(1)
-        )
-    ))
-    .join(" ");
-}
-
-
-function formatStrikeoutTendency(
-  items: AnalyticsTendencyItem[],
-  knownCount: number
-): string {
-  if (
-    knownCount <= 0
-    || items.length === 0
-  ) {
-    return "N/A";
-  }
-
-  return items
-    .slice(0, 2)
-    .map((item) => (
-      `${formatTendencyValue(item.value)} `
-      + `${item.count}/${knownCount}`
-    ))
-    .join(" · ");
 }
 
 

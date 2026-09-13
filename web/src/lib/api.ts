@@ -124,6 +124,61 @@ export type AnalyticsStrikeoutTendencies = {
 };
 
 
+export type AnalyticsMatchupKey =
+  | "RvR"
+  | "RvL"
+  | "LvR"
+  | "LvL";
+
+
+export type AnalyticsMatchupLocation =
+  | "high_in"
+  | "high"
+  | "high_away"
+  | "inside"
+  | "middle"
+  | "outside"
+  | "low_in"
+  | "low"
+  | "low_away";
+
+
+export type AnalyticsMatchupProfile = {
+  plate_appearances: number;
+  strikeouts: number;
+  strikeout_pct: number | null;
+  with_finishing_pitch: number;
+  with_location: number;
+  location_coverage_pct: number | null;
+  with_style: number;
+  location_counts: Record<
+    AnalyticsMatchupLocation,
+    number
+  >;
+  location_pitch_counts: Record<
+    AnalyticsMatchupLocation,
+    Record<string, number>
+  >;
+  finishing_pitches: AnalyticsTendencyItem[];
+  locations: AnalyticsTendencyItem[];
+  styles: AnalyticsTendencyItem[];
+};
+
+
+export type AnalyticsMatchupStrikeoutProfiles = {
+  classified_plate_appearances: number;
+  unclassified_plate_appearances: number;
+  coverage_pct: number | null;
+  classified_strikeouts: number;
+  unclassified_strikeouts: number;
+  strikeout_coverage_pct: number | null;
+  matchups: Record<
+    AnalyticsMatchupKey,
+    AnalyticsMatchupProfile
+  >;
+};
+
+
 export type AnalyticsPlayerRow = {
   player_name: string;
   team_name: string;
@@ -153,11 +208,13 @@ export type AnalyticsPlayerRow = {
   strikeout_pct: number | null;
   home_run_pct: number | null;
   strikeout_tendencies: AnalyticsStrikeoutTendencies;
+  matchup_strikeout_profiles: AnalyticsMatchupStrikeoutProfiles;
 };
 
 
 export type AnalyticsPlayersResponse = {
   limit: number;
+  matchup_resolution_available: boolean;
   games_included: number;
   user_players: AnalyticsPlayerRow[];
   opponent_players: AnalyticsPlayerRow[];
@@ -219,6 +276,8 @@ export type GameEvent = {
   batting_team_name: string | null;
   event_type: string;
   player_name: string | null;
+  pitcher_name: string | null;
+  pitcher_is_starter: number | null;
   related_player_name: string | null;
   raw_text: string;
   is_plate_appearance: number;
@@ -462,6 +521,7 @@ export type LiveScoutResponse = {
     era: number | null;
     worker_count: number;
     game_log_platform: string;
+    matchup_resolution_available: boolean;
     hitter_profiles: {
       games_included: number;
       players: LiveHitterProfile[];

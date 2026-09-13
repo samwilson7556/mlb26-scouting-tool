@@ -1323,6 +1323,8 @@ def save_play_by_play_sections(
                 batting_team_name,
                 event_type,
                 player_name,
+                pitcher_name,
+                pitcher_is_starter,
                 related_player_name,
                 raw_text,
                 is_plate_appearance,
@@ -1342,7 +1344,8 @@ def save_play_by_play_sections(
             )
             VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?
             )
             """,
             (
@@ -1358,6 +1361,22 @@ def save_play_by_play_sections(
                 ),
                 event.get(
                     "player_name"
+                ),
+                event.get(
+                    "pitcher_name"
+                ),
+                (
+                    int(
+                        bool(
+                            event.get(
+                                "pitcher_is_starter"
+                            )
+                        )
+                    )
+                    if event.get(
+                        "pitcher_name"
+                    )
+                    else None
                 ),
                 event.get(
                     "related_player_name"
@@ -1419,7 +1438,7 @@ def save_play_by_play_sections(
                         )
                     )
                 ),
-                4,
+                5,
             ),
         )
 

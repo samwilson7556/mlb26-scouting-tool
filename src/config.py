@@ -62,6 +62,12 @@ DB_PATH = (
     DATA_DIR / "mlb26_games.sqlite3"
 )
 
+CARD_CATALOG_CACHE_PATH = (
+    DATA_DIR
+    / "cache"
+    / "mlb26_items_catalog.json"
+)
+
 REQUEST_DELAY_SECONDS = float(
     os.getenv(
         "MLBTS_REQUEST_DELAY_SECONDS",

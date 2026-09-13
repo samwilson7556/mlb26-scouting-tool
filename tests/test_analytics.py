@@ -10,6 +10,9 @@ from src.analytics import (
 )
 from src.config import USERNAME
 from src.database import connect_db, init_db
+from src.player_handedness import (
+    HandednessResolver,
+)
 
 
 class AnalyticsTestCase(
@@ -164,6 +167,8 @@ class AnalyticsTestCase(
         strikeout_type=None,
         terminal_pitch_type=None,
         terminal_pitch_location=None,
+        pitcher_name=None,
+        pitcher_is_starter=None,
     ) -> None:
         self.conn.execute(
             """
@@ -174,6 +179,8 @@ class AnalyticsTestCase(
                 batting_side,
                 event_type,
                 player_name,
+                pitcher_name,
+                pitcher_is_starter,
                 raw_text,
                 is_plate_appearance,
                 is_hit,
@@ -185,7 +192,7 @@ class AnalyticsTestCase(
             )
             VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?
+                ?, ?, ?, ?, ?
             )
             """,
             (
@@ -195,6 +202,17 @@ class AnalyticsTestCase(
                 batting_side,
                 event_type,
                 player_name,
+                pitcher_name,
+                (
+                    int(
+                        bool(
+                            pitcher_is_starter
+                        )
+                    )
+                    if pitcher_is_starter
+                    is not None
+                    else None
+                ),
                 event_type,
                 int(
                     is_plate_appearance
@@ -527,6 +545,133 @@ class PlayerEventAnalyticsTests(
         self.assertNotIn(
             "Ghost Batter",
             all_names,
+        )
+
+    def test_matchup_profiles_use_persisted_pitcher_and_box_position_context(
+        self,
+    ):
+        self.insert_game(
+            game_id="matchup-game",
+            display_date=(
+                "2026-01-03 12:00:00"
+            ),
+            user_is_home=True,
+            opponent_name="Alpha",
+            opponent_team_name=(
+                "Alpha Team"
+            ),
+        )
+
+        self.conn.execute(
+            """
+            INSERT INTO player_batting_stats (
+                game_id,
+                team_id,
+                team_name,
+                player_name
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                "matchup-game",
+                "alpha",
+                "Alpha Team",
+                "Switch Batter, SS",
+            ),
+        )
+
+        self.insert_event(
+            game_id="matchup-game",
+            source_index=1,
+            batting_side="away",
+            event_type="strikeout",
+            player_name="Switch Batter",
+            is_plate_appearance=True,
+            strikeout_type="chasing",
+            terminal_pitch_type="slider",
+            terminal_pitch_location=(
+                "low_away"
+            ),
+            pitcher_name="Right Pitcher",
+            pitcher_is_starter=True,
+        )
+
+        self.conn.commit()
+
+        resolver = HandednessResolver(
+            [
+                {
+                    "name": "Switch Batter",
+                    "is_hitter": True,
+                    "two_way": False,
+                    "bat_hand": "S",
+                    "throw_hand": "R",
+                    "display_position": "SS",
+                    "display_secondary_positions": "",
+                },
+                {
+                    "name": "Right Pitcher",
+                    "is_hitter": False,
+                    "two_way": False,
+                    "bat_hand": "R",
+                    "throw_hand": "R",
+                    "display_position": "SP",
+                    "display_secondary_positions": "",
+                },
+            ]
+        )
+
+        report = get_player_event_analytics(
+            self.conn,
+            USERNAME,
+            limit=20,
+            handedness_resolver=resolver,
+        )
+
+        player = report[
+            "opponent_players"
+        ][0]
+
+        profiles = player[
+            "matchup_strikeout_profiles"
+        ]
+
+        self.assertEqual(
+            profiles[
+                "classified_plate_appearances"
+            ],
+            1,
+        )
+
+        self.assertEqual(
+            profiles[
+                "coverage_pct"
+            ],
+            100.0,
+        )
+
+        self.assertEqual(
+            profiles[
+                "matchups"
+            ][
+                "RvL"
+            ][
+                "strikeouts"
+            ],
+            1,
+        )
+
+        self.assertEqual(
+            profiles[
+                "matchups"
+            ][
+                "RvL"
+            ][
+                "location_counts"
+            ][
+                "low_away"
+            ],
+            1,
         )
 
     def test_strikeout_tendencies_are_aggregated_by_hitter(

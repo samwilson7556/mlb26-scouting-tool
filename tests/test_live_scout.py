@@ -1,6 +1,9 @@
 import unittest
 from unittest.mock import patch
 
+from src.player_handedness import (
+    HandednessResolver,
+)
 from src.live_scout import (
     LiveScoutConfig,
     aggregate_live_hitter_profiles,
@@ -252,6 +255,9 @@ class LiveScoutHistoryPlatformResolutionTests(
         )
 
     @patch(
+        "src.live_scout.get_handedness_resolver"
+    )
+    @patch(
         "src.live_scout.fetch_live_log_stats_concurrently"
     )
     @patch(
@@ -269,8 +275,15 @@ class LiveScoutHistoryPlatformResolutionTests(
         mock_resolve_history,
         mock_fetch_history,
         mock_fetch_logs,
+        mock_get_handedness_resolver,
     ):
         session = object()
+
+        handedness_resolver = object()
+
+        mock_get_handedness_resolver.return_value = (
+            handedness_resolver
+        )
         probe_payload = {
             "total_pages": 1,
             "game_history": [],
@@ -352,6 +365,15 @@ class LiveScoutHistoryPlatformResolutionTests(
             ],
             "xbl",
         )
+
+        self.assertIs(
+            log_kwargs[
+                "handedness_resolver"
+            ],
+            handedness_resolver,
+        )
+
+        mock_get_handedness_resolver.assert_called_once()
 
 
 class LiveScoutPlatformResolutionTests(
@@ -966,6 +988,142 @@ class LiveScoutNormalizedEventTests(
         self.assertEqual(
             event["terminal_pitch_location"],
             "low_away",
+        )
+
+    @patch(
+        "src.live_scout.fetch_game_log_for_user"
+    )
+    @patch(
+        "src.live_scout.create_live_session"
+    )
+    def test_worker_can_resolve_matchup_when_resolver_is_supplied(
+        self,
+        mock_create_live_session,
+        mock_fetch_game_log,
+    ):
+        mock_create_live_session.return_value = (
+            object()
+        )
+
+        game_log = make_game_log(
+            home_name="ScoutUser",
+            away_name="OtherUser",
+        )
+
+        game_log["game"][1][1][0][
+            "8507077"
+        ][
+            "batting_stats"
+        ] = [
+            {
+                "player_name": (
+                    "Switch Batter, SS"
+                )
+            }
+        ]
+
+        game_log["game"].append(
+            [
+                "game_log",
+                (
+                    "Inning 1: "
+                    "Vols batting. "
+                    "Right Pitcher pitching. "
+                    "Switch Batter struck out "
+                    "chasing a slider low and away. "
+                    "Runs: 0 Hits: 0 Walks: 0 "
+                    "Errors: 0 Pitches: 4 "
+                    "Runners Left On: 0"
+                ),
+            ]
+        )
+
+        mock_fetch_game_log.return_value = (
+            game_log
+        )
+
+        resolver = HandednessResolver(
+            [
+                {
+                    "name": "Switch Batter",
+                    "is_hitter": True,
+                    "two_way": False,
+                    "bat_hand": "S",
+                    "throw_hand": "R",
+                    "display_position": "SS",
+                    "display_secondary_positions": "",
+                },
+                {
+                    "name": "Right Pitcher",
+                    "is_hitter": False,
+                    "two_way": False,
+                    "bat_hand": "R",
+                    "throw_hand": "R",
+                    "display_position": "SP",
+                    "display_secondary_positions": "",
+                },
+            ]
+        )
+
+        result = (
+            fetch_and_parse_log_for_game(
+                {
+                    "id": "matchup-live-game",
+                    "home_name": (
+                        "ScoutUser"
+                    ),
+                    "away_name": (
+                        "OtherUser"
+                    ),
+                    "home_full_name": "Vols",
+                    "away_full_name": (
+                        "Other Team"
+                    ),
+                },
+                "ScoutUser",
+                "psn",
+                resolver,
+            )
+        )
+
+        strikeout = next(
+            event
+            for event in (
+                result["events"]
+            )
+            if (
+                event[
+                    "event_type"
+                ]
+                == "strikeout"
+            )
+        )
+
+        self.assertEqual(
+            strikeout[
+                "pitcher_name"
+            ],
+            "Right Pitcher",
+        )
+
+        self.assertTrue(
+            strikeout[
+                "pitcher_is_starter"
+            ]
+        )
+
+        self.assertEqual(
+            strikeout[
+                "batter_position"
+            ],
+            "SS",
+        )
+
+        self.assertEqual(
+            strikeout[
+                "matchup"
+            ],
+            "RvL",
         )
 
     @patch(
