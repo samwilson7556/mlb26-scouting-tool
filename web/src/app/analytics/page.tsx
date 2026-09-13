@@ -5,8 +5,10 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import {
   AnalyticsInningRow,
+  AnalyticsPlayersResponse,
   AnalyticsTrendGame,
   AnalyticsTrendsResponse,
+  getAnalyticsPlayers,
   getAnalyticsTrends,
 } from "@/lib/api";
 import { formatGameDateTime } from "@/lib/dates";
@@ -19,6 +21,8 @@ export default function AnalyticsPage() {
   const [limit, setLimit] = useState(20);
   const [report, setReport] =
     useState<AnalyticsTrendsResponse | null>(null);
+  const [playerReport, setPlayerReport] =
+    useState<AnalyticsPlayersResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] =
     useState<string | null>(null);
@@ -31,10 +35,17 @@ export default function AnalyticsPage() {
       setError(null);
 
       try {
-        const result = await getAnalyticsTrends(limit);
+        const [
+          trendsResult,
+          playersResult,
+        ] = await Promise.all([
+          getAnalyticsTrends(limit),
+          getAnalyticsPlayers(limit),
+        ]);
 
         if (!cancelled) {
-          setReport(result);
+          setReport(trendsResult);
+          setPlayerReport(playersResult);
         }
       } catch (err) {
         if (!cancelled) {
@@ -127,9 +138,116 @@ export default function AnalyticsPage() {
         </div>
       )}
 
-      {!loading && !error && report && (
+      {!loading && !error && report && playerReport && (
         <div className="space-y-6">
           <SummaryGrid report={report} />
+
+          <section className="card">
+            <SectionHeader
+              title="Your hitters"
+              subtitle={
+                `${playerReport.games_included} `
+                + "games with normalized play-by-play; "
+                + "sorted by plate appearances"
+              }
+            />
+
+            {playerReport.user_players.length === 0 ? (
+              <EmptyState text="No normalized hitter data is available yet." />
+            ) : (
+              <div className="mt-5 max-h-[42rem] overflow-auto rounded-xl border border-slate-800">
+                <table className="mlb-table min-w-[1280px]">
+                  <thead>
+                    <tr>
+                      <th>Player</th>
+                      <th className="numeric">G</th>
+                      <th className="numeric">PA</th>
+                      <th className="numeric">AB</th>
+                      <th className="numeric divider-left">H</th>
+                      <th className="numeric">2B</th>
+                      <th className="numeric">3B</th>
+                      <th className="numeric">HR</th>
+                      <th className="numeric divider-left">AVG</th>
+                      <th className="numeric">BB</th>
+                      <th className="numeric">IBB</th>
+                      <th className="numeric">K</th>
+                      <th className="numeric divider-left">BB%</th>
+                      <th className="numeric">K%</th>
+                      <th className="numeric">HR%</th>
+                      <th className="numeric divider-left">SB</th>
+                      <th className="numeric">CS</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {playerReport.user_players.map((player) => (
+                      <tr key={player.player_name.toLowerCase()}>
+                        <td className="primary">
+                          {player.player_name}
+                        </td>
+                        <td className="numeric">
+                          {player.games}
+                        </td>
+                        <td className="numeric">
+                          {player.plate_appearances}
+                        </td>
+                        <td className="numeric">
+                          {player.at_bats}
+                        </td>
+                        <td className="numeric divider-left">
+                          {player.hits}
+                        </td>
+                        <td className="numeric">
+                          {player.doubles}
+                        </td>
+                        <td className="numeric">
+                          {player.triples}
+                        </td>
+                        <td className="numeric">
+                          {player.home_runs}
+                        </td>
+                        <td className="numeric divider-left">
+                          {formatAverage(
+                            player.batting_average
+                          )}
+                        </td>
+                        <td className="numeric">
+                          {player.walks}
+                        </td>
+                        <td className="numeric">
+                          {player.intentional_walks}
+                        </td>
+                        <td className="numeric">
+                          {player.strikeouts}
+                        </td>
+                        <td className="numeric divider-left">
+                          {formatPercent(
+                            player.walk_pct
+                          )}
+                        </td>
+                        <td className="numeric">
+                          {formatPercent(
+                            player.strikeout_pct
+                          )}
+                        </td>
+                        <td className="numeric">
+                          {formatPercent(
+                            player.home_run_pct
+                          )}
+                        </td>
+                        <td className="numeric divider-left">
+                          {player.stolen_bases}
+                        </td>
+                        <td className="numeric">
+                          {player.caught_stealing}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
 
           <section className="card">
             <SectionHeader
@@ -522,6 +640,28 @@ function Legend({
       ))}
     </div>
   );
+}
+
+
+function formatAverage(
+  value: number | null
+): string {
+  if (value === null) {
+    return "N/A";
+  }
+
+  return value
+    .toFixed(3)
+    .replace(/^0/, "");
+}
+
+
+function formatPercent(
+  value: number | null
+): string {
+  return value === null
+    ? "N/A"
+    : `${value.toFixed(1)}%`;
 }
 
 

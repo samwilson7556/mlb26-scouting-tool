@@ -100,6 +100,45 @@ export type AnalyticsTrendsResponse = {
 };
 
 
+export type AnalyticsPlayerRow = {
+  player_name: string;
+  team_name: string;
+  opponent_name?: string | null;
+  games: number;
+  plate_appearances: number;
+  at_bats: number;
+  hits: number;
+  singles: number;
+  doubles: number;
+  triples: number;
+  home_runs: number;
+  walks: number;
+  intentional_walks: number;
+  hit_by_pitch: number;
+  strikeouts: number;
+  sacrifice_flies: number;
+  sacrifice_bunts: number;
+  double_plays: number;
+  triple_plays: number;
+  runs: number;
+  stolen_bases: number;
+  caught_stealing: number;
+  picked_off: number;
+  batting_average: number | null;
+  walk_pct: number | null;
+  strikeout_pct: number | null;
+  home_run_pct: number | null;
+};
+
+
+export type AnalyticsPlayersResponse = {
+  limit: number;
+  games_included: number;
+  user_players: AnalyticsPlayerRow[];
+  opponent_players: AnalyticsPlayerRow[];
+};
+
+
 export type GameSummary = {
   id: string;
   display_date: string | null;
@@ -425,6 +464,19 @@ export async function getAnalyticsTrends(
 
   return apiFetch<AnalyticsTrendsResponse>(
     `/analytics/trends?${searchParams.toString()}`
+  );
+}
+
+
+export async function getAnalyticsPlayers(
+  limit = 20
+): Promise<AnalyticsPlayersResponse> {
+  const searchParams = new URLSearchParams({
+    limit: String(limit),
+  });
+
+  return apiFetch<AnalyticsPlayersResponse>(
+    `/analytics/players?${searchParams.toString()}`
   );
 }
 
