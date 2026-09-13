@@ -194,7 +194,15 @@ def _load_innings(
 def _load_recent_games_with_events(
     conn: sqlite3.Connection,
     limit: int,
+    opponent_name: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
+    normalized_opponent = (
+        opponent_name.strip()
+        if opponent_name
+        and opponent_name.strip()
+        else None
+    )
+
     rows = conn.execute(
         """
         SELECT
@@ -212,12 +220,20 @@ def _load_recent_games_with_events(
             FROM game_events AS ge
             WHERE ge.game_id = games.id
         )
+          AND (
+              ? IS NULL
+              OR LOWER(opponent_name) = LOWER(?)
+          )
         ORDER BY
             display_date DESC,
             id DESC
         LIMIT ?
         """,
-        (limit,),
+        (
+            normalized_opponent,
+            normalized_opponent,
+            limit,
+        ),
     ).fetchall()
 
     return [
@@ -302,13 +318,17 @@ def get_player_event_analytics(
     conn: sqlite3.Connection,
     username: str,
     limit: int = 20,
+    opponent_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Aggregate normalized offensive events by player.
 
     The most recent `limit` games containing normalized game events are
-    considered. Events are attributed to the configured user or opponent
-    from the persisted batting_side plus get_user_side().
+    considered. When opponent_name is supplied, the opponent filter is
+    applied before the limit so the window represents that opponent's
+    most recent event-bearing games. Events are attributed to the
+    configured user or opponent from the persisted batting_side plus
+    get_user_side().
 
     User hitters are grouped by normalized player name so a custom-team
     rename does not split their history. Opponent hitters are grouped by
@@ -323,6 +343,7 @@ def get_player_event_analytics(
     games = _load_recent_games_with_events(
         conn,
         limit,
+        opponent_name=opponent_name,
     )
 
     events_by_game = _load_game_events(

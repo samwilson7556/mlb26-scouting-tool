@@ -648,6 +648,119 @@ class PlayerEventAnalyticsTests(
             1,
         )
 
+    def test_opponent_filter_is_applied_before_limit(
+        self,
+    ):
+        self.insert_game(
+            game_id="target-old",
+            display_date=(
+                "2026-03-01 12:00:00"
+            ),
+            user_is_home=True,
+            opponent_name="TargetUser",
+            opponent_team_name="Old Target",
+        )
+        self.insert_event(
+            game_id="target-old",
+            source_index=1,
+            batting_side="away",
+            event_type="single",
+            player_name="Target Batter",
+            is_plate_appearance=True,
+            is_hit=True,
+            hit_bases=1,
+        )
+
+        self.insert_game(
+            game_id="target-new",
+            display_date=(
+                "2026-03-02 12:00:00"
+            ),
+            user_is_home=False,
+            opponent_name="TargetUser",
+            opponent_team_name="New Target",
+        )
+        self.insert_event(
+            game_id="target-new",
+            source_index=1,
+            batting_side="home",
+            event_type="home_run",
+            player_name="Target Batter",
+            is_plate_appearance=True,
+            is_hit=True,
+            hit_bases=4,
+        )
+
+        # This is the newest game overall. If LIMIT were applied before
+        # opponent filtering, the requested TargetUser report would be empty.
+        self.insert_game(
+            game_id="other-newest",
+            display_date=(
+                "2026-03-03 12:00:00"
+            ),
+            user_is_home=True,
+            opponent_name="OtherUser",
+            opponent_team_name="Other Team",
+        )
+        self.insert_event(
+            game_id="other-newest",
+            source_index=1,
+            batting_side="away",
+            event_type="double",
+            player_name="Other Batter",
+            is_plate_appearance=True,
+            is_hit=True,
+            hit_bases=2,
+        )
+
+        self.conn.commit()
+
+        report = get_player_event_analytics(
+            self.conn,
+            USERNAME,
+            limit=1,
+            opponent_name="targetuser",
+        )
+
+        self.assertEqual(
+            report["games_included"],
+            1,
+        )
+        self.assertEqual(
+            len(report["opponent_players"]),
+            1,
+        )
+
+        batter = report[
+            "opponent_players"
+        ][0]
+
+        self.assertEqual(
+            batter["opponent_name"],
+            "TargetUser",
+        )
+        self.assertEqual(
+            batter["games"],
+            1,
+        )
+        self.assertEqual(
+            batter["plate_appearances"],
+            1,
+        )
+        self.assertEqual(
+            batter["hits"],
+            1,
+        )
+        self.assertEqual(
+            batter["home_runs"],
+            1,
+        )
+        self.assertEqual(
+            batter["singles"],
+            0,
+        )
+
+
     def test_empty_database_returns_empty_player_lists(
         self,
     ):

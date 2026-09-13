@@ -670,6 +670,7 @@ class ApiRouteIntegrationTests(unittest.TestCase):
             "/analytics/players",
             params={
                 "limit": 1,
+                "opponent": "opponentone",
             },
         )
 

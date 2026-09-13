@@ -878,6 +878,9 @@ def get_analytics_players(
         ge=1,
         le=200,
     ),
+    opponent: Optional[str] = Query(
+        default=None,
+    ),
     conn: sqlite3.Connection = Depends(
         get_conn
     ),
@@ -888,6 +891,7 @@ def get_analytics_players(
             conn,
             USERNAME,
             limit=limit,
+            opponent_name=opponent,
         ),
     }
 
