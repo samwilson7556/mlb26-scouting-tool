@@ -24,6 +24,9 @@ from .parser import (
     parse_display_date,
     safe_int,
 )
+from .play_by_play import (
+    parse_game_log_text,
+)
 
 
 console = Console()
@@ -370,6 +373,625 @@ def parse_live_log_stats_for_username(
     }
 
 
+def _normalize_team_label(
+    value: Any,
+) -> str:
+    return " ".join(
+        str(value or "").split()
+    ).casefold()
+
+
+def attribute_live_event_sides(
+    events: List[Dict[str, Any]],
+    game: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """
+    Add home/away batting-side attribution to normalized live events
+    using the full team names from game history.
+    """
+    home_team = _normalize_team_label(
+        game.get(
+            "home_full_name"
+        )
+    )
+    away_team = _normalize_team_label(
+        game.get(
+            "away_full_name"
+        )
+    )
+
+    attributed = []
+
+    for event in events:
+        batting_team = (
+            _normalize_team_label(
+                event.get(
+                    "batting_team"
+                )
+            )
+        )
+
+        if (
+            home_team
+            and batting_team == home_team
+        ):
+            batting_side = "home"
+        elif (
+            away_team
+            and batting_team == away_team
+        ):
+            batting_side = "away"
+        else:
+            batting_side = "unknown"
+
+        attributed.append(
+            {
+                **event,
+                "batting_side": (
+                    batting_side
+                ),
+            }
+        )
+
+    return attributed
+
+
+def _live_percentage(
+    numerator: int,
+    denominator: int,
+) -> Optional[float]:
+    if denominator <= 0:
+        return None
+
+    return round(
+        numerator
+        / denominator
+        * 100,
+        1,
+    )
+
+
+def _increment_live_category(
+    counts: Dict[str, int],
+    value: Any,
+) -> None:
+    normalized = " ".join(
+        str(value or "").split()
+    ).casefold()
+
+    if not normalized:
+        return
+
+    counts[normalized] = (
+        counts.get(
+            normalized,
+            0,
+        )
+        + 1
+    )
+
+
+def _live_category_breakdown(
+    counts: Dict[str, int],
+) -> List[Dict[str, Any]]:
+    total = sum(
+        counts.values()
+    )
+
+    return [
+        {
+            "value": value,
+            "count": count,
+            "pct": (
+                _live_percentage(
+                    count,
+                    total,
+                )
+            ),
+        }
+        for value, count in sorted(
+            counts.items(),
+            key=lambda item: (
+                -item[1],
+                item[0],
+            ),
+        )
+    ]
+
+
+def aggregate_live_hitter_profiles(
+    results: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Aggregate normalized offensive events for the searched
+    Live Scout user across successfully parsed game logs.
+
+    Each worker result supplies its authoritative user_side;
+    events from the other batting side are ignored.
+    """
+    buckets: Dict[
+        str,
+        Dict[str, Any],
+    ] = {}
+
+    games_included = 0
+
+    tracked_non_pa_events = {
+        "runner_scored",
+        "stolen_base",
+        "caught_stealing",
+        "picked_off",
+    }
+
+    for result in results:
+        if not result.get(
+            "success"
+        ):
+            continue
+
+        user_side = result.get(
+            "user_side"
+        )
+
+        if user_side not in {
+            "home",
+            "away",
+        }:
+            continue
+
+        events = result.get(
+            "events",
+            [],
+        )
+
+        if not isinstance(
+            events,
+            list,
+        ):
+            continue
+
+        if not events:
+            continue
+
+        game_id = str(
+            result.get(
+                "game_id"
+            )
+            or ""
+        )
+
+        games_included += 1
+
+        for event in events:
+            if not isinstance(
+                event,
+                dict,
+            ):
+                continue
+
+            if (
+                event.get(
+                    "batting_side"
+                )
+                != user_side
+            ):
+                continue
+
+            is_plate_appearance = bool(
+                safe_int(
+                    event.get(
+                        "is_plate_appearance"
+                    )
+                )
+            )
+
+            event_type = str(
+                event.get(
+                    "event_type"
+                )
+                or ""
+            )
+
+            if (
+                not is_plate_appearance
+                and event_type
+                not in tracked_non_pa_events
+            ):
+                continue
+
+            player_name = " ".join(
+                str(
+                    event.get(
+                        "player_name"
+                    )
+                    or ""
+                ).split()
+            )
+
+            if not player_name:
+                continue
+
+            key = player_name.casefold()
+
+            bucket = buckets.get(
+                key
+            )
+
+            if bucket is None:
+                bucket = {
+                    "player_name": (
+                        player_name
+                    ),
+                    "_games": set(),
+                    "plate_appearances": 0,
+                    "hits": 0,
+                    "singles": 0,
+                    "doubles": 0,
+                    "triples": 0,
+                    "home_runs": 0,
+                    "walks": 0,
+                    "intentional_walks": 0,
+                    "hit_by_pitch": 0,
+                    "strikeouts": 0,
+                    "sacrifice_flies": 0,
+                    "sacrifice_bunts": 0,
+                    "double_plays": 0,
+                    "triple_plays": 0,
+                    "runs": 0,
+                    "stolen_bases": 0,
+                    "caught_stealing": 0,
+                    "picked_off": 0,
+                    "_strikeout_pitches": {},
+                    "_strikeout_locations": {},
+                    "_strikeout_styles": {},
+                }
+
+                buckets[
+                    key
+                ] = bucket
+
+            if game_id:
+                bucket[
+                    "_games"
+                ].add(
+                    game_id
+                )
+
+            if is_plate_appearance:
+                bucket[
+                    "plate_appearances"
+                ] += 1
+
+            if bool(
+                safe_int(
+                    event.get(
+                        "is_hit"
+                    )
+                )
+            ):
+                bucket[
+                    "hits"
+                ] += 1
+
+                hit_bases = safe_int(
+                    event.get(
+                        "hit_bases"
+                    )
+                )
+
+                if hit_bases == 1:
+                    bucket[
+                        "singles"
+                    ] += 1
+                elif hit_bases == 2:
+                    bucket[
+                        "doubles"
+                    ] += 1
+                elif hit_bases == 3:
+                    bucket[
+                        "triples"
+                    ] += 1
+                elif hit_bases == 4:
+                    bucket[
+                        "home_runs"
+                    ] += 1
+
+            if event_type == "walk":
+                bucket[
+                    "walks"
+                ] += 1
+
+                if (
+                    event.get(
+                        "cause"
+                    )
+                    == "intentional_walk"
+                ):
+                    bucket[
+                        "intentional_walks"
+                    ] += 1
+
+            elif event_type == "hit_by_pitch":
+                bucket[
+                    "hit_by_pitch"
+                ] += 1
+
+            elif event_type == "strikeout":
+                bucket[
+                    "strikeouts"
+                ] += 1
+
+                _increment_live_category(
+                    bucket[
+                        "_strikeout_pitches"
+                    ],
+                    event.get(
+                        "terminal_pitch_type"
+                    ),
+                )
+                _increment_live_category(
+                    bucket[
+                        "_strikeout_locations"
+                    ],
+                    event.get(
+                        "terminal_pitch_location"
+                    ),
+                )
+                _increment_live_category(
+                    bucket[
+                        "_strikeout_styles"
+                    ],
+                    event.get(
+                        "strikeout_type"
+                    ),
+                )
+
+            elif event_type == "sacrifice_fly":
+                bucket[
+                    "sacrifice_flies"
+                ] += 1
+
+            elif event_type == "sacrifice_bunt":
+                bucket[
+                    "sacrifice_bunts"
+                ] += 1
+
+            elif event_type == "double_play":
+                bucket[
+                    "double_plays"
+                ] += 1
+
+            elif event_type == "triple_play":
+                bucket[
+                    "triple_plays"
+                ] += 1
+
+            elif event_type == "runner_scored":
+                bucket[
+                    "runs"
+                ] += 1
+
+            elif event_type == "stolen_base":
+                bucket[
+                    "stolen_bases"
+                ] += 1
+
+            elif event_type == "caught_stealing":
+                bucket[
+                    "caught_stealing"
+                ] += 1
+
+            elif event_type == "picked_off":
+                bucket[
+                    "picked_off"
+                ] += 1
+
+    rows = []
+
+    for bucket in buckets.values():
+        plate_appearances = bucket[
+            "plate_appearances"
+        ]
+
+        at_bats = max(
+            0,
+            (
+                plate_appearances
+                - bucket["walks"]
+                - bucket[
+                    "hit_by_pitch"
+                ]
+                - bucket[
+                    "sacrifice_flies"
+                ]
+                - bucket[
+                    "sacrifice_bunts"
+                ]
+            ),
+        )
+
+        hits = bucket[
+            "hits"
+        ]
+
+        pitch_counts = bucket[
+            "_strikeout_pitches"
+        ]
+        location_counts = bucket[
+            "_strikeout_locations"
+        ]
+        style_counts = bucket[
+            "_strikeout_styles"
+        ]
+
+        row = {
+            key: value
+            for key, value
+            in bucket.items()
+            if not key.startswith(
+                "_"
+            )
+        }
+
+        row[
+            "games"
+        ] = len(
+            bucket[
+                "_games"
+            ]
+        )
+        row[
+            "at_bats"
+        ] = at_bats
+        row[
+            "batting_average"
+        ] = (
+            round(
+                hits / at_bats,
+                3,
+            )
+            if at_bats > 0
+            else None
+        )
+        row[
+            "walk_pct"
+        ] = _live_percentage(
+            bucket[
+                "walks"
+            ],
+            plate_appearances,
+        )
+        row[
+            "strikeout_pct"
+        ] = _live_percentage(
+            bucket[
+                "strikeouts"
+            ],
+            plate_appearances,
+        )
+        row[
+            "home_run_pct"
+        ] = _live_percentage(
+            bucket[
+                "home_runs"
+            ],
+            plate_appearances,
+        )
+        row[
+            "strikeout_tendencies"
+        ] = {
+            "with_finishing_pitch": (
+                sum(
+                    pitch_counts.values()
+                )
+            ),
+            "with_location": (
+                sum(
+                    location_counts.values()
+                )
+            ),
+            "with_style": (
+                sum(
+                    style_counts.values()
+                )
+            ),
+            "finishing_pitches": (
+                _live_category_breakdown(
+                    pitch_counts
+                )
+            ),
+            "locations": (
+                _live_category_breakdown(
+                    location_counts
+                )
+            ),
+            "styles": (
+                _live_category_breakdown(
+                    style_counts
+                )
+            ),
+        }
+
+        rows.append(
+            row
+        )
+
+    rows.sort(
+        key=lambda row: (
+            -row[
+                "plate_appearances"
+            ],
+            -row[
+                "home_runs"
+            ],
+            row[
+                "player_name"
+            ].casefold(),
+        )
+    )
+
+    return {
+        "games_included": (
+            games_included
+        ),
+        "players": rows,
+    }
+
+
+def parse_live_normalized_events(
+    game_log: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """
+    Parse normalized play-by-play events from one fetched MLBTS
+    game-log response.
+
+    Missing or unavailable text play-by-play does not make the
+    overall live-log fetch fail; it simply yields no normalized
+    events.
+    """
+    sections = extract_game_sections(
+        game_log
+    )
+
+    text_log = sections.get(
+        "game_log",
+        "",
+    )
+
+    if not isinstance(
+        text_log,
+        str,
+    ):
+        return []
+
+    if not text_log.strip():
+        return []
+
+    parsed = parse_game_log_text(
+        text_log
+    )
+
+    events = parsed.get(
+        "events",
+        [],
+    )
+
+    if not isinstance(
+        events,
+        list,
+    ):
+        return []
+
+    return [
+        dict(event)
+        for event in events
+        if isinstance(
+            event,
+            dict,
+        )
+    ]
+
+
 def fetch_and_parse_log_for_game(
     game: Dict[str, Any],
     username: str,
@@ -388,6 +1010,8 @@ def fetch_and_parse_log_for_game(
         "success": False,
         "error": None,
         "stats": None,
+        "events": [],
+        "user_side": None,
     }
 
     if not game_id:
@@ -404,6 +1028,10 @@ def fetch_and_parse_log_for_game(
             "Could not attribute user side from game history"
         )
         return result
+
+    result["user_side"] = (
+        user_side
+    )
 
     try:
         session = create_live_session()
@@ -431,14 +1059,123 @@ def fetch_and_parse_log_for_game(
             )
             return result
 
+        normalized_events = (
+            parse_live_normalized_events(
+                game_log
+            )
+        )
+
+        normalized_events = (
+            attribute_live_event_sides(
+                normalized_events,
+                game,
+            )
+        )
+
         result["success"] = True
         result["stats"] = parsed_stats
+        result["events"] = (
+            normalized_events
+        )
 
         return result
 
     except Exception as exc:
         result["error"] = str(exc)
         return result
+
+
+def resolve_live_log_platform(
+    games: List[Dict[str, Any]],
+    username: str,
+    preferred_platform: str,
+) -> str:
+    """
+    Resolve the platform identity accepted by MLBTS game_log.
+
+    MLBTS game_history and game_log can disagree about which platform
+    value identifies the same searched user. Try the platform selected
+    for history first, then the remaining supported platform values.
+
+    Up to two recent games are used as probes so one unavailable
+    historical log does not prevent resolution.
+    """
+    preferred = (
+        preferred_platform
+        .strip()
+        .lower()
+    )
+
+    candidates = []
+
+    for candidate in (
+        preferred,
+        "psn",
+        "xbl",
+        "mlbts",
+        "nsw",
+    ):
+        if (
+            candidate
+            and candidate
+            not in candidates
+        ):
+            candidates.append(
+                candidate
+            )
+
+    probe_games = [
+        game
+        for game in games
+        if game.get("id")
+    ][:2]
+
+    if not probe_games:
+        return preferred
+
+    session = create_live_session()
+
+    request_count = 0
+
+    for game in probe_games:
+        game_id = str(
+            game.get(
+                "id",
+                "",
+            )
+        )
+
+        for candidate in candidates:
+            if request_count > 0:
+                time.sleep(
+                    REQUEST_DELAY_SECONDS
+                )
+
+            request_count += 1
+
+            try:
+                payload = (
+                    fetch_game_log_for_user(
+                        session=session,
+                        game_id=game_id,
+                        username=username,
+                        platform=candidate,
+                    )
+                )
+            except Exception:
+                continue
+
+            if (
+                isinstance(
+                    payload,
+                    dict,
+                )
+                and "error"
+                not in payload
+            ):
+                return candidate
+
+    return preferred
 
 
 def fetch_live_log_stats_concurrently(
@@ -459,6 +1196,13 @@ def fetch_live_log_stats_concurrently(
         "batting_average": None,
         "era": None,
         "worker_count": 0,
+        "game_log_platform": (
+            platform.strip().lower()
+        ),
+        "hitter_profiles": {
+            "games_included": 0,
+            "players": [],
+        },
     }
 
     if not games:
@@ -470,6 +1214,38 @@ def fetch_live_log_stats_concurrently(
     )
 
     log_stats["worker_count"] = worker_count
+
+    resolved_platform = (
+        resolve_live_log_platform(
+            games,
+            username,
+            platform,
+        )
+    )
+
+    log_stats[
+        "game_log_platform"
+    ] = resolved_platform
+
+    preferred_platform = (
+        platform.strip().lower()
+    )
+
+    if (
+        resolved_platform
+        != preferred_platform
+    ):
+        console.print(
+            f"[yellow]"
+            f"Resolved game-log platform: "
+            f"{preferred_platform} -> "
+            f"{resolved_platform}"
+            f"[/yellow]"
+        )
+
+    successful_results: List[
+        Dict[str, Any]
+    ] = []
 
     console.print(
         f"[cyan]Fetching {len(games)} game log(s) "
@@ -485,7 +1261,7 @@ def fetch_live_log_stats_concurrently(
                 fetch_and_parse_log_for_game,
                 game,
                 username,
-                platform,
+                resolved_platform,
             )
             for game in games
         ]
@@ -499,6 +1275,10 @@ def fetch_live_log_stats_concurrently(
 
             if result.get("success"):
                 parsed_stats = result["stats"]
+
+                successful_results.append(
+                    result
+                )
 
                 log_stats["logs_fetched"] += 1
                 log_stats["batting_ab"] += (
@@ -530,6 +1310,12 @@ def fetch_live_log_stats_concurrently(
                     f"{result.get('error')}"
                     f"[/red]"
                 )
+
+    log_stats["hitter_profiles"] = (
+        aggregate_live_hitter_profiles(
+            successful_results
+        )
+    )
 
     if log_stats["batting_ab"] > 0:
         log_stats["batting_average"] = round(
@@ -709,6 +1495,15 @@ def build_live_scout_report(
             "batting_average": None,
             "era": None,
             "worker_count": 0,
+            "game_log_platform": (
+                config.platform
+                .strip()
+                .lower()
+            ),
+            "hitter_profiles": {
+                "games_included": 0,
+                "players": [],
+            },
         }
 
     return {

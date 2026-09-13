@@ -1034,6 +1034,332 @@ export default function ScoutPage() {
               </div>
 
 
+              {liveReport
+                .advanced_from_game_logs
+                .logs_requested && (
+                <div className="card">
+                  <div>
+                    <h2 className="text-xl font-bold text-white">
+                      Live Hitter Profiles
+                    </h2>
+
+                    <p className="mt-1 text-sm text-slate-500">
+                      {
+                        liveReport
+                          .advanced_from_game_logs
+                          .hitter_profiles
+                          .games_included
+                      }{" "}
+                      {liveReport
+                        .advanced_from_game_logs
+                        .hitter_profiles
+                        .games_included === 1
+                        ? "game"
+                        : "games"}{" "}
+                      with normalized
+                      play-by-play
+                      {" "}
+                      <span className="text-slate-600">
+                        •
+                      </span>{" "}
+                      game-log platform:{" "}
+                      <span className="font-semibold text-slate-400">
+                        {
+                          liveReport
+                            .advanced_from_game_logs
+                            .game_log_platform
+                        }
+                      </span>
+                    </p>
+                  </div>
+
+                  {liveReport
+                    .advanced_from_game_logs
+                    .hitter_profiles
+                    .players.length === 0 ? (
+                    <div className="mt-6 rounded-xl border border-dashed border-slate-800 p-8 text-center text-sm text-slate-500">
+                      No normalized hitter
+                      data was available from
+                      the fetched game logs.
+                    </div>
+                  ) : (
+                    <div className="mlb-table-wrap mt-5">
+                      <table className="mlb-table min-w-[1120px]">
+                        <thead>
+                          <tr>
+                            <th>Player</th>
+
+                            <th className="numeric">
+                              G
+                            </th>
+
+                            <th className="numeric">
+                              PA
+                            </th>
+
+                            <th className="numeric">
+                              AB
+                            </th>
+
+                            <th className="numeric divider-left">
+                              H
+                            </th>
+
+                            <th className="numeric">
+                              2B
+                            </th>
+
+                            <th className="numeric">
+                              3B
+                            </th>
+
+                            <th className="numeric">
+                              HR
+                            </th>
+
+                            <th className="numeric divider-left">
+                              AVG
+                            </th>
+
+                            <th className="numeric">
+                              BB
+                            </th>
+
+                            <th className="numeric">
+                              K
+                            </th>
+
+                            <th className="numeric divider-left">
+                              BB%
+                            </th>
+
+                            <th className="numeric">
+                              K%
+                            </th>
+
+                            <th className="numeric">
+                              HR%
+                            </th>
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          {liveReport
+                            .advanced_from_game_logs
+                            .hitter_profiles
+                            .players
+                            .map((player) => (
+                            <tr
+                              key={
+                                player
+                                  .player_name
+                                  .toLowerCase()
+                              }
+                            >
+                              <td className="primary">
+                                {
+                                  player
+                                    .player_name
+                                }
+                              </td>
+
+                              <td className="numeric">
+                                {player.games}
+                              </td>
+
+                              <td className="numeric">
+                                {
+                                  player
+                                    .plate_appearances
+                                }
+                              </td>
+
+                              <td className="numeric">
+                                {player.at_bats}
+                              </td>
+
+                              <td className="numeric divider-left">
+                                {player.hits}
+                              </td>
+
+                              <td className="numeric">
+                                {player.doubles}
+                              </td>
+
+                              <td className="numeric">
+                                {player.triples}
+                              </td>
+
+                              <td className="numeric">
+                                {
+                                  player
+                                    .home_runs
+                                }
+                              </td>
+
+                              <td className="numeric divider-left">
+                                {formatAverage(
+                                  player
+                                    .batting_average
+                                )}
+                              </td>
+
+                              <td className="numeric">
+                                {player.walks}
+                              </td>
+
+                              <td className="numeric">
+                                {
+                                  player
+                                    .strikeouts
+                                }
+                              </td>
+
+                              <td className="numeric divider-left">
+                                {formatPercent(
+                                  player.walk_pct
+                                )}
+                              </td>
+
+                              <td className="numeric">
+                                {formatPercent(
+                                  player
+                                    .strikeout_pct
+                                )}
+                              </td>
+
+                              <td className="numeric">
+                                {formatPercent(
+                                  player
+                                    .home_run_pct
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {liveReport
+                    .advanced_from_game_logs
+                    .hitter_profiles
+                    .players.some(
+                      (player) =>
+                        player.strikeouts > 0
+                    ) && (
+                    <div className="mt-6 border-t border-slate-800 pt-5">
+                      <div>
+                        <h3 className="text-base font-bold text-white">
+                          Strikeout Profiles
+                        </h3>
+
+                        <p className="mt-1 text-sm text-slate-500">
+                          Recorded finishing
+                          pitch, location, and
+                          strikeout style from
+                          the fetched live
+                          game logs.
+                        </p>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                        {liveReport
+                          .advanced_from_game_logs
+                          .hitter_profiles
+                          .players
+                          .filter(
+                            (player) =>
+                              player.strikeouts
+                              > 0
+                          )
+                          .map((player) => (
+                          <div
+                            key={
+                              `live-strikeout-${player.player_name.toLowerCase()}`
+                            }
+                            className="rounded-xl border border-slate-800 bg-slate-950/60 p-4"
+                          >
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="font-bold text-white">
+                                {
+                                  player
+                                    .player_name
+                                }
+                              </div>
+
+                              <div className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs font-bold text-slate-300">
+                                {
+                                  player
+                                    .strikeouts
+                                }{" "}
+                                {player.strikeouts === 1
+                                  ? "K"
+                                  : "Ks"}
+                              </div>
+                            </div>
+
+                            <div className="mt-4 space-y-2 text-sm">
+                              <div className="grid grid-cols-[52px_1fr] gap-3">
+                                <span className="font-semibold text-slate-500">
+                                  Pitch
+                                </span>
+
+                                <span className="text-slate-300">
+                                  {formatStrikeoutTendency(
+                                    player
+                                      .strikeout_tendencies
+                                      .finishing_pitches,
+                                    player
+                                      .strikeout_tendencies
+                                      .with_finishing_pitch
+                                  )}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-[52px_1fr] gap-3">
+                                <span className="font-semibold text-slate-500">
+                                  Zone
+                                </span>
+
+                                <span className="text-slate-300">
+                                  {formatStrikeoutTendency(
+                                    player
+                                      .strikeout_tendencies
+                                      .locations,
+                                    player
+                                      .strikeout_tendencies
+                                      .with_location
+                                  )}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-[52px_1fr] gap-3">
+                                <span className="font-semibold text-slate-500">
+                                  Style
+                                </span>
+
+                                <span className="text-slate-300">
+                                  {formatStrikeoutTendency(
+                                    player
+                                      .strikeout_tendencies
+                                      .styles,
+                                    player
+                                      .strikeout_tendencies
+                                      .with_style
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+
               <div className="overflow-hidden rounded-2xl border border-slate-800 bg-black shadow-2xl shadow-black/30">
                 <div className="border-b border-slate-800 bg-black px-5 py-4">
                   <h3 className="text-sm font-black uppercase tracking-wide text-white">

@@ -415,6 +415,12 @@ export type SyncAllResponse = {
 };
 
 
+export type LiveHitterProfile = Omit<
+  AnalyticsPlayerRow,
+  "team_name" | "opponent_name"
+>;
+
+
 export type LiveScoutResponse = {
   username: string;
   platform: string;
@@ -454,6 +460,11 @@ export type LiveScoutResponse = {
     batting_average: number | null;
     era: number | null;
     worker_count: number;
+    game_log_platform: string;
+    hitter_profiles: {
+      games_included: number;
+      players: LiveHitterProfile[];
+    };
   };
 
   games: Array<{
