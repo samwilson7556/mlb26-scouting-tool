@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { formatGameDateTime } from "@/lib/dates";
 import {
+  AnalyticsPlayersResponse,
+  getAnalyticsPlayers,
   getAppConfig,
   getLocalOpponent,
   liveScout,
@@ -28,6 +30,13 @@ export default function ScoutPage() {
 
   const [liveReport, setLiveReport] =
     useState<LiveScoutResponse | null>(null);
+
+  const [
+    opponentPlayerReport,
+    setOpponentPlayerReport,
+  ] = useState<AnalyticsPlayersResponse | null>(
+    null
+  );
 
   const [error, setError] =
     useState<string | null>(null);
@@ -63,6 +72,7 @@ export default function ScoutPage() {
     setError(null);
     setLocalReport(null);
     setLiveReport(null);
+    setOpponentPlayerReport(null);
 
     try {
       const result =
@@ -71,6 +81,18 @@ export default function ScoutPage() {
         );
 
       setLocalReport(result);
+
+      if (result.found) {
+        const playerResult =
+          await getAnalyticsPlayers(
+            200,
+            trimmedUsername
+          );
+
+        setOpponentPlayerReport(
+          playerResult
+        );
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -95,6 +117,7 @@ export default function ScoutPage() {
     setError(null);
     setLocalReport(null);
     setLiveReport(null);
+    setOpponentPlayerReport(null);
 
     try {
       const result = await liveScout({
@@ -323,58 +346,235 @@ export default function ScoutPage() {
 
 
           {localReport && (
-            <div className="card">
-              <h2 className="text-xl font-bold text-white">
-                Local Scout Report
-              </h2>
+            <div className="space-y-5">
+              <div className="card">
+                <h2 className="text-xl font-bold text-white">
+                  Local Scout Report
+                </h2>
 
-              {!localReport.found ? (
-                <p className="mt-4 text-yellow-400">
-                  {localReport.message}
-                </p>
-              ) : (
-                <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <Stat
-                    label="Opponent"
-                    value={
-                      localReport.opponent
-                    }
-                  />
+                {!localReport.found ? (
+                  <p className="mt-4 text-yellow-400">
+                    {localReport.message}
+                  </p>
+                ) : (
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    <Stat
+                      label="Opponent"
+                      value={
+                        localReport.opponent
+                      }
+                    />
 
-                  <Stat
-                    label="Games"
-                    value={
-                      localReport.games_played
-                    }
-                  />
+                    <Stat
+                      label="Games"
+                      value={
+                        localReport.games_played
+                      }
+                    />
 
-                  <Stat
-                    label="Record"
-                    value={
-                      localReport.your_record
-                    }
-                  />
+                    <Stat
+                      label="Record"
+                      value={
+                        localReport.your_record
+                      }
+                    />
 
-                  <Stat
-                    label="Avg Runs For"
-                    value={
-                      localReport.avg_runs_scored
-                    }
-                  />
+                    <Stat
+                      label="Avg Runs For"
+                      value={
+                        localReport.avg_runs_scored
+                      }
+                    />
 
-                  <Stat
-                    label="Avg Runs Allowed"
-                    value={
-                      localReport.avg_runs_allowed
-                    }
-                  />
+                    <Stat
+                      label="Avg Runs Allowed"
+                      value={
+                        localReport.avg_runs_allowed
+                      }
+                    />
 
-                  <Stat
-                    label="Last Played"
-                    value={
-                      localReport.last_played
-                    }
-                  />
+                    <Stat
+                      label="Last Played"
+                      value={
+                        localReport.last_played
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+
+              {localReport.found
+                && opponentPlayerReport && (
+                <div className="card">
+                  <div>
+                    <h2 className="text-xl font-bold text-white">
+                      Opponent hitters
+                    </h2>
+
+                    <p className="mt-1 text-sm text-slate-500">
+                      {
+                        opponentPlayerReport
+                          .games_included
+                      }{" "}
+                      {opponentPlayerReport.games_included === 1
+                        ? "game"
+                        : "games"}{" "}
+                      with normalized
+                      play-by-play
+                    </p>
+                  </div>
+
+                  {opponentPlayerReport
+                    .opponent_players
+                    .length === 0 ? (
+                    <div className="mt-6 rounded-xl border border-dashed border-slate-800 p-8 text-center text-sm text-slate-500">
+                      No normalized hitter
+                      data is available for
+                      this opponent yet.
+                    </div>
+                  ) : (
+                    <div className="mlb-table-wrap mt-5">
+                      <table className="mlb-table min-w-[1120px]">
+                        <thead>
+                          <tr>
+                            <th>Player</th>
+                            <th className="numeric">
+                              G
+                            </th>
+                            <th className="numeric">
+                              PA
+                            </th>
+                            <th className="numeric">
+                              AB
+                            </th>
+                            <th className="numeric divider-left">
+                              H
+                            </th>
+                            <th className="numeric">
+                              2B
+                            </th>
+                            <th className="numeric">
+                              3B
+                            </th>
+                            <th className="numeric">
+                              HR
+                            </th>
+                            <th className="numeric divider-left">
+                              AVG
+                            </th>
+                            <th className="numeric">
+                              BB
+                            </th>
+                            <th className="numeric">
+                              K
+                            </th>
+                            <th className="numeric divider-left">
+                              BB%
+                            </th>
+                            <th className="numeric">
+                              K%
+                            </th>
+                            <th className="numeric">
+                              HR%
+                            </th>
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          {opponentPlayerReport
+                            .opponent_players
+                            .map((player) => (
+                            <tr
+                              key={
+                                player
+                                  .player_name
+                                  .toLowerCase()
+                              }
+                            >
+                              <td className="primary">
+                                {
+                                  player
+                                    .player_name
+                                }
+                              </td>
+
+                              <td className="numeric">
+                                {player.games}
+                              </td>
+
+                              <td className="numeric">
+                                {
+                                  player
+                                    .plate_appearances
+                                }
+                              </td>
+
+                              <td className="numeric">
+                                {player.at_bats}
+                              </td>
+
+                              <td className="numeric divider-left">
+                                {player.hits}
+                              </td>
+
+                              <td className="numeric">
+                                {player.doubles}
+                              </td>
+
+                              <td className="numeric">
+                                {player.triples}
+                              </td>
+
+                              <td className="numeric">
+                                {
+                                  player
+                                    .home_runs
+                                }
+                              </td>
+
+                              <td className="numeric divider-left">
+                                {formatAverage(
+                                  player
+                                    .batting_average
+                                )}
+                              </td>
+
+                              <td className="numeric">
+                                {player.walks}
+                              </td>
+
+                              <td className="numeric">
+                                {
+                                  player
+                                    .strikeouts
+                                }
+                              </td>
+
+                              <td className="numeric divider-left">
+                                {formatPercent(
+                                  player.walk_pct
+                                )}
+                              </td>
+
+                              <td className="numeric">
+                                {formatPercent(
+                                  player
+                                    .strikeout_pct
+                                )}
+                              </td>
+
+                              <td className="numeric">
+                                {formatPercent(
+                                  player
+                                    .home_run_pct
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -879,6 +1079,28 @@ function ResultBadge({
       N/A
     </span>
   );
+}
+
+
+function formatAverage(
+  value: number | null
+): string {
+  if (value === null) {
+    return "N/A";
+  }
+
+  return value
+    .toFixed(3)
+    .replace(/^0/, "");
+}
+
+
+function formatPercent(
+  value: number | null
+): string {
+  return value === null
+    ? "N/A"
+    : `${value.toFixed(1)}%`;
 }
 
 

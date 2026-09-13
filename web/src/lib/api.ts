@@ -469,11 +469,22 @@ export async function getAnalyticsTrends(
 
 
 export async function getAnalyticsPlayers(
-  limit = 20
+  limit = 20,
+  opponent?: string
 ): Promise<AnalyticsPlayersResponse> {
   const searchParams = new URLSearchParams({
     limit: String(limit),
   });
+
+  const normalizedOpponent =
+    opponent?.trim();
+
+  if (normalizedOpponent) {
+    searchParams.set(
+      "opponent",
+      normalizedOpponent
+    );
+  }
 
   return apiFetch<AnalyticsPlayersResponse>(
     `/analytics/players?${searchParams.toString()}`
