@@ -1,6 +1,12 @@
 import sqlite3
 from typing import Any, Dict, List, Optional
 
+from .hitter_analytics import (
+    apply_hitter_event,
+    create_hitter_bucket,
+    finalize_hitter_buckets,
+    hitter_event_is_relevant,
+)
 from .parser import get_user_side, safe_int
 
 
@@ -23,65 +29,6 @@ def _average(
         total / count,
         2,
     )
-
-
-def _percentage(
-    count: int,
-    total: int,
-) -> Optional[float]:
-    if total <= 0:
-        return None
-
-    return round(
-        (count / total) * 100,
-        1,
-    )
-
-
-def _increment_category_count(
-    counts: Dict[str, int],
-    value: Any,
-) -> None:
-    normalized = " ".join(
-        str(value or "").split()
-    ).casefold()
-
-    if not normalized:
-        return
-
-    counts[normalized] = (
-        counts.get(
-            normalized,
-            0,
-        )
-        + 1
-    )
-
-
-def _category_breakdown(
-    counts: Dict[str, int],
-) -> List[Dict[str, Any]]:
-    total = sum(
-        counts.values()
-    )
-
-    return [
-        {
-            "value": value,
-            "count": count,
-            "pct": _percentage(
-                count,
-                total,
-            ),
-        }
-        for value, count in sorted(
-            counts.items(),
-            key=lambda item: (
-                -item[1],
-                item[0],
-            ),
-        )
-    ]
 
 
 def _load_recent_games_with_box_scores(
@@ -429,13 +376,6 @@ def get_player_event_analytics(
 
     games_included = 0
 
-    tracked_non_pa_events = {
-        "runner_scored",
-        "stolen_base",
-        "caught_stealing",
-        "picked_off",
-    }
-
     for game in games:
         user_side = get_user_side(
             game,
@@ -464,23 +404,8 @@ def get_player_event_analytics(
             }:
                 continue
 
-            is_plate_appearance = bool(
-                safe_int(
-                    event.get(
-                        "is_plate_appearance"
-                    )
-                )
-            )
-
-            event_type = str(
-                event.get("event_type")
-                or ""
-            )
-
-            if (
-                not is_plate_appearance
-                and event_type
-                not in tracked_non_pa_events
+            if not hitter_event_is_relevant(
+                event
             ):
                 continue
 
@@ -516,24 +441,27 @@ def get_player_event_analytics(
                 player_name.casefold()
             )
 
+            bucket_opponent_name = None
+
             if scope == "user":
                 key = (
                     normalized_player_name
                 )
-                opponent_name = None
             else:
-                opponent_name = " ".join(
-                    str(
-                        game.get(
-                            "opponent_name"
-                        )
-                        or ""
-                    ).split()
+                bucket_opponent_name = (
+                    " ".join(
+                        str(
+                            game.get(
+                                "opponent_name"
+                            )
+                            or ""
+                        ).split()
+                    )
                 )
 
                 opponent_identity = (
-                    opponent_name.casefold()
-                    if opponent_name
+                    bucket_opponent_name.casefold()
+                    if bucket_opponent_name
                     else (
                         str(
                             team_name
@@ -551,167 +479,34 @@ def get_player_event_analytics(
             ].get(key)
 
             if bucket is None:
-                bucket = {
-                    "player_name": (
-                        player_name
-                    ),
+                metadata = {
                     "team_name": (
                         str(team_name)
                     ),
-                    "_games": set(),
-                    "plate_appearances": 0,
-                    "hits": 0,
-                    "singles": 0,
-                    "doubles": 0,
-                    "triples": 0,
-                    "home_runs": 0,
-                    "walks": 0,
-                    "intentional_walks": 0,
-                    "hit_by_pitch": 0,
-                    "strikeouts": 0,
-                    "sacrifice_flies": 0,
-                    "sacrifice_bunts": 0,
-                    "double_plays": 0,
-                    "triple_plays": 0,
-                    "runs": 0,
-                    "stolen_bases": 0,
-                    "caught_stealing": 0,
-                    "picked_off": 0,
-                    "_strikeout_pitches": {},
-                    "_strikeout_locations": {},
-                    "_strikeout_styles": {},
                 }
 
                 if scope == "opponent":
-                    bucket[
+                    metadata[
                         "opponent_name"
                     ] = (
-                        opponent_name
+                        bucket_opponent_name
                         or None
                     )
+
+                bucket = create_hitter_bucket(
+                    player_name,
+                    **metadata,
+                )
 
                 player_buckets[
                     scope
                 ][key] = bucket
 
-            bucket["_games"].add(
-                game["id"]
+            apply_hitter_event(
+                bucket,
+                event,
+                game_id=game["id"],
             )
-
-            if is_plate_appearance:
-                bucket[
-                    "plate_appearances"
-                ] += 1
-
-            if bool(
-                safe_int(
-                    event.get(
-                        "is_hit"
-                    )
-                )
-            ):
-                bucket["hits"] += 1
-
-                hit_bases = safe_int(
-                    event.get(
-                        "hit_bases"
-                    )
-                )
-
-                if hit_bases == 1:
-                    bucket["singles"] += 1
-                elif hit_bases == 2:
-                    bucket["doubles"] += 1
-                elif hit_bases == 3:
-                    bucket["triples"] += 1
-                elif hit_bases == 4:
-                    bucket[
-                        "home_runs"
-                    ] += 1
-
-            if event_type == "walk":
-                bucket["walks"] += 1
-
-                if (
-                    event.get("cause")
-                    == "intentional_walk"
-                ):
-                    bucket[
-                        "intentional_walks"
-                    ] += 1
-
-            elif event_type == "hit_by_pitch":
-                bucket[
-                    "hit_by_pitch"
-                ] += 1
-
-            elif event_type == "strikeout":
-                bucket[
-                    "strikeouts"
-                ] += 1
-
-                _increment_category_count(
-                    bucket[
-                        "_strikeout_pitches"
-                    ],
-                    event.get(
-                        "terminal_pitch_type"
-                    ),
-                )
-                _increment_category_count(
-                    bucket[
-                        "_strikeout_locations"
-                    ],
-                    event.get(
-                        "terminal_pitch_location"
-                    ),
-                )
-                _increment_category_count(
-                    bucket[
-                        "_strikeout_styles"
-                    ],
-                    event.get(
-                        "strikeout_type"
-                    ),
-                )
-
-            elif event_type == "sacrifice_fly":
-                bucket[
-                    "sacrifice_flies"
-                ] += 1
-
-            elif event_type == "sacrifice_bunt":
-                bucket[
-                    "sacrifice_bunts"
-                ] += 1
-
-            elif event_type == "double_play":
-                bucket[
-                    "double_plays"
-                ] += 1
-
-            elif event_type == "triple_play":
-                bucket[
-                    "triple_plays"
-                ] += 1
-
-            elif event_type == "runner_scored":
-                bucket["runs"] += 1
-
-            elif event_type == "stolen_base":
-                bucket[
-                    "stolen_bases"
-                ] += 1
-
-            elif event_type == "caught_stealing":
-                bucket[
-                    "caught_stealing"
-                ] += 1
-
-            elif event_type == "picked_off":
-                bucket[
-                    "picked_off"
-                ] += 1
 
     def finalize(
         buckets: Dict[
@@ -719,122 +514,9 @@ def get_player_event_analytics(
             Dict[str, Any],
         ],
     ) -> List[Dict[str, Any]]:
-        rows: List[
-            Dict[str, Any]
-        ] = []
-
-        for bucket in buckets.values():
-            plate_appearances = bucket[
-                "plate_appearances"
-            ]
-
-            at_bats = max(
-                0,
-                (
-                    plate_appearances
-                    - bucket["walks"]
-                    - bucket[
-                        "hit_by_pitch"
-                    ]
-                    - bucket[
-                        "sacrifice_flies"
-                    ]
-                    - bucket[
-                        "sacrifice_bunts"
-                    ]
-                ),
-            )
-
-            hits = bucket["hits"]
-
-            row = {
-                key: value
-                for key, value
-                in bucket.items()
-                if not key.startswith("_")
-            }
-
-            pitch_counts = bucket[
-                "_strikeout_pitches"
-            ]
-            location_counts = bucket[
-                "_strikeout_locations"
-            ]
-            style_counts = bucket[
-                "_strikeout_styles"
-            ]
-
-            row[
-                "strikeout_tendencies"
-            ] = {
-                "with_finishing_pitch": (
-                    sum(
-                        pitch_counts.values()
-                    )
-                ),
-                "with_location": (
-                    sum(
-                        location_counts.values()
-                    )
-                ),
-                "with_style": (
-                    sum(
-                        style_counts.values()
-                    )
-                ),
-                "finishing_pitches": (
-                    _category_breakdown(
-                        pitch_counts
-                    )
-                ),
-                "locations": (
-                    _category_breakdown(
-                        location_counts
-                    )
-                ),
-                "styles": (
-                    _category_breakdown(
-                        style_counts
-                    )
-                ),
-            }
-
-            row["games"] = len(
-                bucket["_games"]
-            )
-            row["at_bats"] = at_bats
-            row["batting_average"] = (
-                round(
-                    hits / at_bats,
-                    3,
-                )
-                if at_bats > 0
-                else None
-            )
-            row["walk_pct"] = (
-                _percentage(
-                    bucket["walks"],
-                    plate_appearances,
-                )
-            )
-            row["strikeout_pct"] = (
-                _percentage(
-                    bucket[
-                        "strikeouts"
-                    ],
-                    plate_appearances,
-                )
-            )
-            row["home_run_pct"] = (
-                _percentage(
-                    bucket[
-                        "home_runs"
-                    ],
-                    plate_appearances,
-                )
-            )
-
-            rows.append(row)
+        rows = finalize_hitter_buckets(
+            buckets
+        )
 
         return sorted(
             rows,
@@ -842,7 +524,9 @@ def get_player_event_analytics(
                 -row[
                     "plate_appearances"
                 ],
-                -row["home_runs"],
+                -row[
+                    "home_runs"
+                ],
                 row[
                     "player_name"
                 ].casefold(),
