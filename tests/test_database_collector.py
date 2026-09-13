@@ -987,9 +987,110 @@ class NormalizedGamePersistenceTests(
         self.assertTrue(
             all(
                 row["parser_version"]
-                == 1
+                == 3
                 for row in event_rows
             )
+        )
+
+    def test_text_inning_runs_repair_stale_line_score_when_totals_match(
+        self,
+    ):
+        self.insert_game(
+            "game-1"
+        )
+
+        payload = {
+            "game": [
+                [
+                    "line_score",
+                    {
+                        "home_full_name": "Home Team",
+                        "away_full_name": "Away Team",
+                        "innings": "3",
+                        "home_runs": "2",
+                        "away_runs": "3",
+                        "home_runs_1": "0",
+                        "away_runs_1": "0",
+                        "home_runs_2": "0",
+                        "away_runs_2": "0",
+                        "home_runs_3": "0",
+                        "away_runs_3": "0",
+                    },
+                ],
+                [
+                    "game_log",
+                    (
+                        "Inning 1:\n"
+                        "Away Team batting. "
+                        "Away Batter homered. "
+                        "Away Batter scores. "
+                        "Runs: 1 Hits: 1 Walks: 0 "
+                        "Errors: 0 Pitches: 4 "
+                        "Runners Left On: 0\n"
+                        "Home Team batting. "
+                        "Home Batter homered. "
+                        "Home Batter scores. "
+                        "Home Batter 2 homered. "
+                        "Home Batter 2 scores. "
+                        "Runs: 2 Hits: 2 Walks: 0 "
+                        "Errors: 0 Pitches: 7 "
+                        "Runners Left On: 0 "
+                        "Inning 2:\n"
+                        "Away Team batting. "
+                        "Runs: 0 Hits: 0 Walks: 0 "
+                        "Errors: 0 Pitches: 3 "
+                        "Runners Left On: 0\n"
+                        "Home Team batting. "
+                        "Runs: 0 Hits: 0 Walks: 0 "
+                        "Errors: 0 Pitches: 3 "
+                        "Runners Left On: 0 "
+                        "Inning 3:\n"
+                        "Away Team batting. "
+                        "Away Batter 2 homered. "
+                        "Away Batter 2 scores. "
+                        "Away Batter 3 homered. "
+                        "Away Batter 3 scores. "
+                        "Runs: 2 Hits: 2 Walks: 0 "
+                        "Errors: 0 Pitches: 6 "
+                        "Runners Left On: 0"
+                    ),
+                ],
+            ]
+        }
+
+        save_game_log(
+            self.conn,
+            "game-1",
+            payload,
+        )
+
+        rows = self.conn.execute(
+            """
+            SELECT
+                inning,
+                away_runs,
+                home_runs
+            FROM game_innings
+            WHERE game_id = ?
+            ORDER BY inning
+            """,
+            ("game-1",),
+        ).fetchall()
+
+        self.assertEqual(
+            [
+                (
+                    row["inning"],
+                    row["away_runs"],
+                    row["home_runs"],
+                )
+                for row in rows
+            ],
+            [
+                (1, 1, 2),
+                (2, 0, 0),
+                (3, 2, 0),
+            ],
         )
 
     def test_batting_side_is_inferred_from_line_score(

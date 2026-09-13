@@ -1064,10 +1064,12 @@ def save_inning_sections(
     sections: Dict[str, Any],
 ) -> None:
     """
-    Replace authoritative inning-by-inning run rows for one game.
+    Replace inning-by-inning run rows for one game.
 
-    These rows come from the structured line_score section rather than
-    the perspective-specific text game log.
+    The structured line_score is the baseline. MLBTS can publish stale or
+    incomplete per-inning values, so text-log inning summaries may repair
+    one side only when their summed runs exactly match that side's final
+    score.
     """
     conn.execute(
         """
@@ -1086,21 +1088,144 @@ def save_inning_sections(
         line_score,
         dict,
     ):
-        return
+        line_score = {}
 
     innings = safe_int(
         line_score.get("innings")
     )
 
-    if (
-        innings is None
-        or innings <= 0
-    ):
-        return
+    inning_runs = {}
 
-    for inning in range(
-        1,
-        innings + 1,
+    if (
+        innings is not None
+        and innings > 0
+    ):
+        for inning in range(
+            1,
+            innings + 1,
+        ):
+            inning_runs[inning] = {
+                "home": safe_int(
+                    line_score.get(
+                        f"home_runs_{inning}"
+                    )
+                ),
+                "away": safe_int(
+                    line_score.get(
+                        f"away_runs_{inning}"
+                    )
+                ),
+            }
+
+    text_log = sections.get(
+        "game_log",
+        "",
+    )
+
+    if (
+        isinstance(text_log, str)
+        and text_log.strip()
+    ):
+        parsed = parse_game_log_text(
+            text_log
+        )
+
+        text_rows = {
+            "home": [],
+            "away": [],
+        }
+
+        for parsed_inning in parsed[
+            "innings"
+        ]:
+            inning = safe_int(
+                parsed_inning.get(
+                    "inning"
+                )
+            )
+            summary = parsed_inning.get(
+                "summary"
+            )
+
+            if (
+                inning is None
+                or inning <= 0
+                or not isinstance(
+                    summary,
+                    dict,
+                )
+            ):
+                continue
+
+            batting_side = (
+                infer_batting_side(
+                    line_score,
+                    parsed_inning.get(
+                        "batting_team"
+                    ),
+                )
+            )
+
+            if batting_side not in {
+                "home",
+                "away",
+            }:
+                continue
+
+            runs = safe_int(
+                summary.get("runs")
+            )
+
+            if runs is None:
+                continue
+
+            text_rows[
+                batting_side
+            ].append(
+                (inning, runs)
+            )
+
+        for side in (
+            "home",
+            "away",
+        ):
+            rows = text_rows[side]
+
+            if not rows:
+                continue
+
+            final_total = safe_int(
+                line_score.get(
+                    f"{side}_runs"
+                )
+            )
+
+            if final_total is None:
+                continue
+
+            text_total = sum(
+                runs
+                for _, runs in rows
+            )
+
+            if text_total != final_total:
+                continue
+
+            for inning, runs in rows:
+                inning_runs.setdefault(
+                    inning,
+                    {
+                        "home": None,
+                        "away": None,
+                    },
+                )
+
+                inning_runs[
+                    inning
+                ][side] = runs
+
+    for inning in sorted(
+        inning_runs
     ):
         conn.execute(
             """
@@ -1115,16 +1240,12 @@ def save_inning_sections(
             (
                 game_id,
                 inning,
-                safe_int(
-                    line_score.get(
-                        f"home_runs_{inning}"
-                    )
-                ),
-                safe_int(
-                    line_score.get(
-                        f"away_runs_{inning}"
-                    )
-                ),
+                inning_runs[
+                    inning
+                ]["home"],
+                inning_runs[
+                    inning
+                ]["away"],
             ),
         )
 
@@ -1137,9 +1258,9 @@ def save_play_by_play_sections(
     """
     Replace normalized text-game-log events for one game.
 
-    MLBTS currently exposes this text log from one batting perspective,
-    so batting_side is inferred conservatively from line_score team names.
-    Unknown attribution is retained as "unknown".
+    MLBTS text logs may contain one or both batting sides. batting_side
+    is inferred conservatively from line_score team names, and unknown
+    attribution is retained as "unknown".
     """
     conn.execute(
         """
@@ -1294,7 +1415,7 @@ def save_play_by_play_sections(
                         )
                     )
                 ),
-                1,
+                3,
             ),
         )
 

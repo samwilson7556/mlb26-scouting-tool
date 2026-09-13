@@ -137,6 +137,42 @@ export type GameLogRecord = {
 };
 
 
+export type GameInning = {
+  id: number;
+  game_id: string;
+  inning: number;
+  home_runs: number | null;
+  away_runs: number | null;
+};
+
+
+export type GameEvent = {
+  id: number;
+  game_id: string;
+  source_index: number;
+  inning: number;
+  batting_side: string;
+  batting_team_name: string | null;
+  event_type: string;
+  player_name: string | null;
+  related_player_name: string | null;
+  raw_text: string;
+  is_plate_appearance: number;
+  is_hit: number;
+  is_out: number;
+  hit_bases: number | null;
+  outs_recorded: number | null;
+  fielding_code: string | null;
+  destination_base: string | null;
+  cause: string | null;
+  strikeout_type: string | null;
+  home_run_distance_ft: number | null;
+  terminal_pitch_type: string | null;
+  secondary_out: number;
+  parser_version: number;
+};
+
+
 export type TeamBoxScore = {
   id: number;
   game_id: string;
@@ -208,6 +244,8 @@ export type GameDetailResponse = {
   team_box_scores: TeamBoxScore[];
   batting_stats: PlayerBattingStat[];
   pitching_stats: PlayerPitchingStat[];
+  innings: GameInning[];
+  events: GameEvent[];
 };
 
 

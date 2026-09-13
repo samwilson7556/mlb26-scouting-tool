@@ -288,6 +288,337 @@ class PlayClassificationTests(unittest.TestCase):
             "runner_out",
         )
 
+    def test_score_on_fielding_error(self):
+        event = classify_play_statement(
+            (
+                "Wagner scored on a fielding "
+                "error by Cavalli (E1)."
+            )
+        )
+
+        self.assertEqual(
+            event["event_type"],
+            "runner_scored",
+        )
+        self.assertEqual(
+            event["player_name"],
+            "Wagner",
+        )
+        self.assertEqual(
+            event["destination_base"],
+            "home",
+        )
+        self.assertEqual(
+            event["cause"],
+            "fielding_error",
+        )
+        self.assertEqual(
+            event["fielding_code"],
+            "E1",
+        )
+
+    def test_picked_off_runner(self):
+        event = classify_play_statement(
+            "Granderson was picked off."
+        )
+
+        self.assertEqual(
+            event["event_type"],
+            "picked_off",
+        )
+        self.assertEqual(
+            event["player_name"],
+            "Granderson",
+        )
+        self.assertTrue(
+            event["is_out"]
+        )
+        self.assertEqual(
+            event["outs_recorded"],
+            1,
+        )
+        self.assertEqual(
+            event["cause"],
+            "picked_off",
+        )
+
+    def test_additional_game_log_phrase_families(self):
+        cases = [
+            (
+                "Aaron pinch runs for Alonso.",
+                "pinch_runner",
+            ),
+            (
+                "Alvarez substituted for Moreno.",
+                "substitution",
+            ),
+            (
+                "Carrigg sacrificed to Minter "
+                "(1-3 SH).",
+                "sacrifice_bunt",
+            ),
+            (
+                "Cholowsky lined into a double "
+                "play (L5-3 DP).",
+                "double_play",
+            ),
+            (
+                "Soto lined into a triple play "
+                "(L9-2-6 TP).",
+                "triple_play",
+            ),
+            (
+                "Caissie reached 3rd on a "
+                "passed ball.",
+                "runner_advanced",
+            ),
+            (
+                "Duran scored on a wild pitch.",
+                "runner_scored",
+            ),
+            (
+                "Leiter balks, runners advance.",
+                "balk",
+            ),
+            (
+                "Taylor throws wild at first.",
+                "throwing_error",
+            ),
+            (
+                "Garcia in bullpen.",
+                "bullpen_marker",
+            ),
+            (
+                "Crow-Armstrong stole.",
+                "stolen_base",
+            ),
+        ]
+
+        for statement, expected in cases:
+            with self.subTest(
+                statement=statement
+            ):
+                event = (
+                    classify_play_statement(
+                        statement
+                    )
+                )
+
+                self.assertEqual(
+                    event["event_type"],
+                    expected,
+                )
+
+    def test_standalone_unassisted_fielding_code_is_not_unknown(self):
+        raw = (
+            "Inning 1: Hoosiers batting. "
+            "Durham at bat. "
+            "(2U). "
+            "Hernandez out. "
+            "Runs: 0 Hits: 0 Walks: 0 "
+            "Errors: 0 Pitches: 1 "
+            "Runners Left On: 0"
+        )
+
+        parsed = parse_game_log_text(
+            raw
+        )
+
+        self.assertEqual(
+            parsed["unknown_count"],
+            0,
+        )
+
+        self.assertEqual(
+            parsed["events"][1][
+                "event_type"
+            ],
+            "runner_out",
+        )
+
+        self.assertEqual(
+            parsed["events"][1][
+                "fielding_code"
+            ],
+            "2U",
+        )
+
+    def test_duplicate_was_out_after_pickoff_is_suppressed(self):
+        raw = (
+            "Inning 1: Hoosiers batting. "
+            "First Batter struck out. "
+            "Second Batter flied out to Center (F8). "
+            "Runner was picked off. "
+            "Runner was out. "
+            "Other Runner was out. "
+            "Runs: 0 Hits: 0 Walks: 0 "
+            "Errors: 0 Pitches: 10 "
+            "Runners Left On: 0"
+        )
+
+        parsed = parse_game_log_text(
+            raw
+        )
+
+        self.assertEqual(
+            [
+                event["event_type"]
+                for event in parsed["events"]
+            ],
+            [
+                "strikeout",
+                "fly_out",
+                "picked_off",
+            ],
+        )
+
+        self.assertEqual(
+            sum(
+                event.get(
+                    "outs_recorded"
+                )
+                or 0
+                for event in parsed["events"]
+            ),
+            3,
+        )
+
+    def test_was_out_is_retained_without_claiming_out_count(self):
+        raw = (
+            "Inning 1: Hoosiers batting. "
+            "Runner singled to center. "
+            "Runner was out. "
+            "Batter struck out. "
+            "Next Batter flied out to Center (F8). "
+            "Runs: 0 Hits: 1 Walks: 0 "
+            "Errors: 0 Pitches: 10 "
+            "Runners Left On: 0"
+        )
+
+        parsed = parse_game_log_text(
+            raw
+        )
+
+        runner_out = [
+            event
+            for event in parsed["events"]
+            if event["event_type"]
+            == "runner_out"
+        ][0]
+
+        self.assertEqual(
+            runner_out["player_name"],
+            "Runner",
+        )
+
+        self.assertIsNone(
+            runner_out["outs_recorded"]
+        )
+
+        self.assertTrue(
+            runner_out["is_out"]
+        )
+
+    def test_dropped_third_strike_does_not_record_out(self):
+        raw = (
+            "Inning 1: Hoosiers batting. "
+            "Carroll struck out but reached first after it was dropped (WP). "
+            "Clark struck out chasing a slider. "
+            "Witt Jr. flied out to Center (F8). "
+            "Marte grounded out to First (3U). "
+            "Runs: 0 Hits: 0 Walks: 0 "
+            "Errors: 0 Pitches: 15 "
+            "Runners Left On: 1"
+        )
+
+        parsed = parse_game_log_text(raw)
+
+        dropped = parsed["events"][0]
+
+        self.assertEqual(
+            dropped["event_type"],
+            "strikeout",
+        )
+        self.assertFalse(
+            dropped["is_out"]
+        )
+        self.assertIsNone(
+            dropped["outs_recorded"]
+        )
+        self.assertEqual(
+            dropped["cause"],
+            "dropped_third_strike",
+        )
+
+        self.assertEqual(
+            sum(
+                event.get("outs_recorded") or 0
+                for event in parsed["events"]
+            ),
+            3,
+        )
+
+    def test_trailing_text_after_three_outs_is_ignored(self):
+        raw = (
+            "Inning 1: Hoosiers batting. "
+            "First grounded out to Shortstop (6-3). "
+            "Second struck out swinging. "
+            "Third flied out to Center (F8). "
+            "Bogus singled to center. "
+            "BogusTwo homered to left (450 feet). "
+            "Runs: 0 Hits: 0 Walks: 0 "
+            "Errors: 0 Pitches: 12 "
+            "Runners Left On: 0"
+        )
+
+        parsed = parse_game_log_text(raw)
+
+        self.assertEqual(
+            len(parsed["events"]),
+            3,
+        )
+
+        self.assertEqual(
+            [
+                event["event_type"]
+                for event in parsed["events"]
+            ],
+            [
+                "ground_out",
+                "strikeout",
+                "fly_out",
+            ],
+        )
+
+        self.assertEqual(
+            sum(
+                event.get("outs_recorded") or 0
+                for event in parsed["events"]
+            ),
+            3,
+        )
+
+    def test_intentional_walk_extracts_player_name(self):
+        event = classify_play_statement(
+            "Granderson was intentionally walked."
+        )
+
+        self.assertEqual(
+            event["event_type"],
+            "walk",
+        )
+        self.assertEqual(
+            event["player_name"],
+            "Granderson",
+        )
+        self.assertEqual(
+            event["cause"],
+            "intentional_walk",
+        )
+        self.assertTrue(
+            event["is_plate_appearance"],
+        )
+
     def test_pitcher_marker(self):
         event = classify_play_statement(
             "Morejon pitching."
@@ -502,6 +833,55 @@ class GameLogParsingTests(unittest.TestCase):
                 "pitcher_marker",
                 "walk",
                 "home_run",
+            ],
+        )
+
+    def test_both_batting_sides_in_one_inning_are_parsed(self):
+        raw = (
+            "^c51^Inning 1:^c50^^n^"
+            "Away Team batting. "
+            "Away Batter homered to center "
+            "(400 feet). "
+            "Away Batter scores. "
+            "^n^Runs: 1 Hits: 1 Walks: 0 "
+            "Errors: 0 Pitches: 5 "
+            "Runners Left On: 0 "
+            "^n^^n^Home Team batting. "
+            "Home Batter struck out on a slider. "
+            "^n^Runs: 0 Hits: 0 Walks: 0 "
+            "Errors: 0 Pitches: 4 "
+            "Runners Left On: 0"
+        )
+
+        parsed = parse_game_log_text(raw)
+
+        self.assertEqual(
+            [
+                (
+                    inning["inning"],
+                    inning["batting_team"],
+                    inning["summary"]["runs"],
+                )
+                for inning in parsed["innings"]
+            ],
+            [
+                (1, "Away Team", 1),
+                (1, "Home Team", 0),
+            ],
+        )
+
+        self.assertEqual(
+            [
+                (
+                    event["batting_team"],
+                    event["event_type"],
+                )
+                for event in parsed["events"]
+            ],
+            [
+                ("Away Team", "home_run"),
+                ("Away Team", "runner_scored"),
+                ("Home Team", "strikeout"),
             ],
         )
 

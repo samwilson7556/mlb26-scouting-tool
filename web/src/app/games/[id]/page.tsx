@@ -8,6 +8,8 @@ import { AppShell } from "@/components/app-shell";
 import {
   AppConfigResponse,
   GameDetailResponse,
+  GameEvent,
+  GameInning,
   PlayerBattingStat,
   PlayerPitchingStat,
   TeamBoxScore,
@@ -151,6 +153,10 @@ export default function GameDetailPage() {
             status={detail.game_log?.api_status}
             fetchedAt={detail.game_log?.fetched_at}
             text={detail.game_log?.raw_text_log}
+            innings={detail.innings}
+            events={detail.events}
+            awayTeam={detail.game.away_full_name}
+            homeTeam={detail.game.home_full_name}
           />
 
           <RawDataSection
@@ -489,39 +495,457 @@ function PitchingTable({
 }
 
 
+type PlayByPlayGroup = {
+  key: string;
+  inning: number;
+  battingSide: string;
+  battingTeamName: string | null;
+  events: GameEvent[];
+};
+
+
 function StoredGameLog({
   status,
   fetchedAt,
   text,
+  innings,
+  events,
+  awayTeam,
+  homeTeam,
 }: {
   status: string | null | undefined;
   fetchedAt: string | null | undefined;
   text: string | null | undefined;
+  innings: GameInning[];
+  events: GameEvent[];
+  awayTeam: string | null | undefined;
+  homeTeam: string | null | undefined;
 }) {
+  const groups =
+    groupPlayByPlayEvents(events);
+
+  const sourceDescription = status
+    ? [
+        `API status: ${status}`,
+        fetchedAt
+          ? `fetched ${formatGameDateTime(fetchedAt)}`
+          : null,
+        events.length
+          ? `${events.length} normalized events`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" • ")
+    : "No game-log API response is stored for this game.";
+
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
       <SectionHeader
-        title="Stored Game Log"
-        description={
-          status
-            ? `API status: ${status}${fetchedAt ? ` • fetched ${fetchedAt}` : ""}`
-            : "No game-log API response is stored for this game."
-        }
+        title="Play-by-Play"
+        description={sourceDescription}
       />
 
-      <div className="p-5">
-        {text ? (
-          <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-slate-800 bg-black p-4 font-mono text-xs leading-6 text-slate-300">
-            {text}
-          </pre>
-        ) : (
-          <div className="text-sm text-slate-500">
-            No text game log is available.
+      {groups.length > 0 ? (
+        <div className="divide-y divide-slate-800">
+          {groups.map((group) => {
+            const inningLine = innings.find(
+              (inning) =>
+                inning.inning === group.inning
+            );
+
+            return (
+              <div
+                key={group.key}
+                className="px-5 py-5"
+              >
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg border border-blue-500/25 bg-blue-500/10 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-blue-300">
+                      {formatHalfInning(
+                        group.inning,
+                        group.battingSide
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="font-black text-white">
+                        {group.battingTeamName ||
+                          "Unknown team"}{" "}
+                        batting
+                      </div>
+                      <div className="mt-0.5 text-xs text-slate-500">
+                        {group.events.length}{" "}
+                        {group.events.length === 1
+                          ? "event"
+                          : "events"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <InningRunSummary
+                    inning={inningLine}
+                    awayTeam={awayTeam}
+                    homeTeam={homeTeam}
+                  />
+                </div>
+
+                <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/45">
+                  {group.events.map(
+                    (event, index) => (
+                      <div
+                        key={`${event.id}-${event.source_index}`}
+                        className={[
+                          "flex gap-3 px-4 py-3",
+                          index > 0
+                            ? "border-t border-slate-800/80"
+                            : "",
+                          event.event_type ===
+                          "pitcher_marker"
+                            ? "bg-slate-950/45"
+                            : "",
+                        ].join(" ")}
+                      >
+                        <div className="w-24 shrink-0 pt-0.5">
+                          <span
+                            className={[
+                              "inline-flex rounded-md px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em]",
+                              eventBadgeClass(
+                                event.event_type
+                              ),
+                            ].join(" ")}
+                          >
+                            {eventLabel(
+                              event.event_type
+                            )}
+                          </span>
+                        </div>
+
+                        <div
+                          className={
+                            event.event_type ===
+                            "pitcher_marker"
+                              ? "text-sm text-slate-400"
+                              : "text-sm leading-6 text-slate-200"
+                          }
+                        >
+                          {cleanMlbtsText(
+                            event.raw_text
+                          )}
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : text ? (
+        <div className="p-5">
+          <div className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-amber-300">
+            Formatted source text
           </div>
-        )}
-      </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm leading-7 text-slate-300">
+            {cleanMlbtsText(text)}
+          </div>
+        </div>
+      ) : (
+        <div className="p-5 text-sm text-slate-500">
+          No play-by-play data is available.
+        </div>
+      )}
+
+      {text && (
+        <details className="border-t border-slate-800">
+          <summary className="cursor-pointer px-5 py-4 text-xs font-black uppercase tracking-[0.12em] text-slate-500 transition hover:text-slate-300">
+            Raw stored game log
+          </summary>
+
+          <div className="border-t border-slate-800 p-5">
+            <p className="mb-3 text-xs text-slate-500">
+              Original MLBTS text, including source formatting codes.
+              Kept here for debugging and verification.
+            </p>
+
+            <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-slate-800 bg-black p-4 font-mono text-xs leading-6 text-slate-400">
+              {text}
+            </pre>
+          </div>
+        </details>
+      )}
     </section>
   );
+}
+
+
+function InningRunSummary({
+  inning,
+  awayTeam,
+  homeTeam,
+}: {
+  inning: GameInning | undefined;
+  awayTeam: string | null | undefined;
+  homeTeam: string | null | undefined;
+}) {
+  if (
+    !inning ||
+    (
+      inning.away_runs === null &&
+      inning.home_runs === null
+    )
+  ) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-400">
+      <span className="rounded-md bg-slate-900 px-2.5 py-1.5">
+        Inning runs
+      </span>
+      <span className="rounded-md bg-slate-900 px-2.5 py-1.5">
+        {awayTeam || "Away"}{" "}
+        <span className="text-white">
+          {inning.away_runs ?? "—"}
+        </span>
+      </span>
+      <span className="rounded-md bg-slate-900 px-2.5 py-1.5">
+        {homeTeam || "Home"}{" "}
+        <span className="text-white">
+          {inning.home_runs ?? "—"}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+
+function groupPlayByPlayEvents(
+  events: GameEvent[]
+): PlayByPlayGroup[] {
+  const groups: PlayByPlayGroup[] = [];
+
+  for (const event of events) {
+    if (
+      event.event_type === "batter_marker" ||
+      event.event_type === "fielding_code_marker"
+    ) {
+      continue;
+    }
+
+    const previous =
+      groups[groups.length - 1];
+
+    const teamName =
+      event.batting_team_name || null;
+
+    if (
+      previous &&
+      previous.inning === event.inning &&
+      previous.battingSide ===
+        event.batting_side &&
+      previous.battingTeamName === teamName
+    ) {
+      previous.events.push(event);
+      continue;
+    }
+
+    groups.push({
+      key: [
+        event.inning,
+        event.batting_side,
+        teamName || "unknown",
+        event.source_index,
+      ].join("-"),
+      inning: event.inning,
+      battingSide: event.batting_side,
+      battingTeamName: teamName,
+      events: [event],
+    });
+  }
+
+  const sideOrder: Record<string, number> = {
+    away: 0,
+    home: 1,
+    unknown: 2,
+  };
+
+  return groups.sort(
+    (left, right) =>
+      left.inning - right.inning ||
+      (sideOrder[left.battingSide] ?? 3) -
+        (sideOrder[right.battingSide] ?? 3) ||
+      left.events[0].source_index -
+        right.events[0].source_index
+  );
+}
+
+
+function formatHalfInning(
+  inning: number,
+  battingSide: string
+): string {
+  const ordinal = formatOrdinal(inning);
+
+  if (battingSide === "away") {
+    return `Top ${ordinal}`;
+  }
+
+  if (battingSide === "home") {
+    return `Bottom ${ordinal}`;
+  }
+
+  return ordinal;
+}
+
+
+function formatOrdinal(
+  value: number
+): string {
+  const remainder100 = value % 100;
+
+  if (
+    remainder100 >= 11 &&
+    remainder100 <= 13
+  ) {
+    return `${value}th`;
+  }
+
+  switch (value % 10) {
+    case 1:
+      return `${value}st`;
+    case 2:
+      return `${value}nd`;
+    case 3:
+      return `${value}rd`;
+    default:
+      return `${value}th`;
+  }
+}
+
+
+function eventLabel(
+  eventType: string
+): string {
+  const labels: Record<string, string> = {
+    home_run: "Home run",
+    single: "Single",
+    double: "Double",
+    triple: "Triple",
+    walk: "Walk",
+    hit_by_pitch: "HBP",
+    strikeout: "Strikeout",
+    fly_out: "Fly out",
+    ground_out: "Ground out",
+    line_out: "Line out",
+    pop_out: "Pop out",
+    bunt_out: "Bunt out",
+    double_play: "Double play",
+    triple_play: "Triple play",
+    sacrifice_fly: "Sac fly",
+    sacrifice_bunt: "Sac bunt",
+    fielders_choice: "Fielder's choice",
+    reached_error: "Error",
+    throwing_error: "Throwing error",
+    stolen_base: "Stolen base",
+    caught_stealing: "Caught stealing",
+    picked_off: "Picked off",
+    runner_scored: "Run scored",
+    runner_advanced: "Advance",
+    runner_out: "Runner out",
+    balk: "Balk",
+    pinch_hit: "Pinch hit",
+    pinch_runner: "Pinch runner",
+    substitution: "Substitution",
+    pitcher_marker: "Pitching",
+    bullpen_marker: "Bullpen",
+  };
+
+  if (labels[eventType]) {
+    return labels[eventType];
+  }
+
+  return eventType
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (character) =>
+      character.toUpperCase()
+    );
+}
+
+
+function eventBadgeClass(
+  eventType: string
+): string {
+  if (
+    [
+      "home_run",
+      "runner_scored",
+    ].includes(eventType)
+  ) {
+    return "bg-amber-500/15 text-amber-300";
+  }
+
+  if (
+    [
+      "single",
+      "double",
+      "triple",
+    ].includes(eventType)
+  ) {
+    return "bg-emerald-500/15 text-emerald-300";
+  }
+
+  if (
+    [
+      "walk",
+      "hit_by_pitch",
+      "stolen_base",
+      "runner_advanced",
+    ].includes(eventType)
+  ) {
+    return "bg-blue-500/15 text-blue-300";
+  }
+
+  if (
+    [
+      "reached_error",
+      "throwing_error",
+      "fielders_choice",
+    ].includes(eventType)
+  ) {
+    return "bg-violet-500/15 text-violet-300";
+  }
+
+  if (
+    [
+      "strikeout",
+      "fly_out",
+      "ground_out",
+      "line_out",
+      "pop_out",
+      "bunt_out",
+      "double_play",
+      "triple_play",
+      "sacrifice_fly",
+      "sacrifice_bunt",
+      "runner_out",
+      "caught_stealing",
+      "picked_off",
+    ].includes(eventType)
+  ) {
+    return "bg-rose-500/10 text-rose-300";
+  }
+
+  return "bg-slate-800 text-slate-300";
+}
+
+
+function cleanMlbtsText(
+  value: string
+): string {
+  return value
+    .replace(/\^[a-z]\d*\^/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 
