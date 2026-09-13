@@ -424,6 +424,7 @@ export type LiveHitterProfile = Omit<
 export type LiveScoutResponse = {
   username: string;
   platform: string;
+  history_platform: string;
   mode: string;
   pages_fetched: number;
   games_found_total: number;

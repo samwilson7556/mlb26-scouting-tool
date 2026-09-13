@@ -2,12 +2,15 @@ import unittest
 from unittest.mock import patch
 
 from src.live_scout import (
+    LiveScoutConfig,
     aggregate_live_hitter_profiles,
     attribute_live_event_sides,
+    build_live_scout_report,
     fetch_and_parse_log_for_game,
     fetch_live_log_stats_concurrently,
     parse_live_log_stats_for_username,
     parse_live_normalized_events,
+    resolve_live_history_platform,
     resolve_live_log_platform,
 )
 
@@ -91,6 +94,264 @@ def make_game_log_with_text(
     )
 
     return payload
+
+
+class LiveScoutHistoryPlatformResolutionTests(
+    unittest.TestCase
+):
+    @patch(
+        "src.live_scout.time.sleep"
+    )
+    @patch(
+        "src.live_scout.fetch_json"
+    )
+    def test_history_resolver_falls_back_to_attributable_platform(
+        self,
+        mock_fetch_json,
+        mock_sleep,
+    ):
+        preferred_payload = {
+            "total_pages": 1,
+            "game_history": [
+                {
+                    "id": "wrong-user",
+                    "home_name": "SomeoneElse",
+                    "away_name": "AnotherUser",
+                    "home_full_name": "Home Team",
+                    "away_full_name": "Away Team",
+                }
+            ],
+        }
+
+        resolved_payload = {
+            "total_pages": 2,
+            "game_history": [
+                {
+                    "id": "game-1",
+                    "home_name": "ScoutUser",
+                    "away_name": "Opponent",
+                    "home_full_name": "Scout Team",
+                    "away_full_name": "Opponent Team",
+                }
+            ],
+        }
+
+        def fake_fetch(
+            session,
+            url,
+            params=None,
+        ):
+            self.assertIsNotNone(
+                session
+            )
+            self.assertIn(
+                "game_history.json",
+                url,
+            )
+
+            if params[
+                "platform"
+            ] == "xbl":
+                return (
+                    resolved_payload
+                )
+
+            return (
+                preferred_payload
+            )
+
+        mock_fetch_json.side_effect = (
+            fake_fetch
+        )
+
+        (
+            resolved_platform,
+            first_page,
+        ) = resolve_live_history_platform(
+            session=object(),
+            username="ScoutUser",
+            preferred_platform="psn",
+            mode="arena",
+        )
+
+        self.assertEqual(
+            resolved_platform,
+            "xbl",
+        )
+        self.assertIs(
+            first_page,
+            resolved_payload,
+        )
+
+        self.assertEqual(
+            [
+                call.kwargs[
+                    "params"
+                ][
+                    "platform"
+                ]
+                for call
+                in mock_fetch_json.call_args_list
+            ],
+            [
+                "psn",
+                "xbl",
+            ],
+        )
+
+        self.assertEqual(
+            mock_sleep.call_count,
+            1,
+        )
+
+    @patch(
+        "src.live_scout.fetch_json"
+    )
+    def test_history_resolver_keeps_preferred_when_attributable(
+        self,
+        mock_fetch_json,
+    ):
+        preferred_payload = {
+            "total_pages": 1,
+            "game_history": [
+                {
+                    "id": "game-1",
+                    "home_name": "ScoutUser",
+                    "away_name": "Opponent",
+                    "home_full_name": "Scout Team",
+                    "away_full_name": "Opponent Team",
+                }
+            ],
+        }
+
+        mock_fetch_json.return_value = (
+            preferred_payload
+        )
+
+        (
+            resolved_platform,
+            first_page,
+        ) = resolve_live_history_platform(
+            session=object(),
+            username="ScoutUser",
+            preferred_platform="psn",
+            mode="arena",
+        )
+
+        self.assertEqual(
+            resolved_platform,
+            "psn",
+        )
+        self.assertIs(
+            first_page,
+            preferred_payload,
+        )
+        self.assertEqual(
+            mock_fetch_json.call_count,
+            1,
+        )
+
+    @patch(
+        "src.live_scout.fetch_live_log_stats_concurrently"
+    )
+    @patch(
+        "src.live_scout.fetch_game_history_for_user"
+    )
+    @patch(
+        "src.live_scout.resolve_live_history_platform"
+    )
+    @patch(
+        "src.live_scout.create_live_session"
+    )
+    def test_report_uses_resolved_history_platform(
+        self,
+        mock_create_session,
+        mock_resolve_history,
+        mock_fetch_history,
+        mock_fetch_logs,
+    ):
+        session = object()
+        probe_payload = {
+            "total_pages": 1,
+            "game_history": [],
+        }
+
+        mock_create_session.return_value = (
+            session
+        )
+        mock_resolve_history.return_value = (
+            "xbl",
+            probe_payload,
+        )
+        mock_fetch_history.return_value = (
+            [],
+            1,
+        )
+        mock_fetch_logs.return_value = {
+            "logs_requested": True,
+            "game_log_platform": "psn",
+        }
+
+        report = build_live_scout_report(
+            LiveScoutConfig(
+                username="ScoutUser",
+                platform="psn",
+                mode="arena",
+                max_pages=2,
+                max_games=5,
+                include_logs=True,
+                log_workers=3,
+            )
+        )
+
+        self.assertEqual(
+            report["platform"],
+            "psn",
+        )
+        self.assertEqual(
+            report[
+                "history_platform"
+            ],
+            "xbl",
+        )
+
+        history_kwargs = (
+            mock_fetch_history
+            .call_args
+            .kwargs
+        )
+
+        self.assertIs(
+            history_kwargs[
+                "session"
+            ],
+            session,
+        )
+        self.assertEqual(
+            history_kwargs[
+                "platform"
+            ],
+            "xbl",
+        )
+        self.assertIs(
+            history_kwargs[
+                "first_page"
+            ],
+            probe_payload,
+        )
+
+        log_kwargs = (
+            mock_fetch_logs
+            .call_args
+            .kwargs
+        )
+
+        self.assertEqual(
+            log_kwargs[
+                "platform"
+            ],
+            "xbl",
+        )
 
 
 class LiveScoutPlatformResolutionTests(

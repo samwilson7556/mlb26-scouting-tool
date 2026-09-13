@@ -72,25 +72,59 @@ def fetch_json(
     return response.json()
 
 
+def _platform_candidates(
+    preferred_platform: str,
+) -> List[str]:
+    preferred = (
+        preferred_platform
+        .strip()
+        .lower()
+    )
+
+    candidates: List[str] = []
+
+    for candidate in (
+        preferred,
+        "psn",
+        "xbl",
+        "mlbts",
+        "nsw",
+    ):
+        if (
+            candidate
+            and candidate
+            not in candidates
+        ):
+            candidates.append(
+                candidate
+            )
+
+    return candidates
+
+
 def fetch_game_history_for_user(
     session: requests.Session,
     username: str,
     platform: str,
     mode: str,
     max_pages: int = 1,
+    first_page: Optional[
+        Dict[str, Any]
+    ] = None,
 ) -> Tuple[List[Dict[str, Any]], int]:
     game_history_url = f"{BASE_URL}/apis/game_history.json"
 
-    first_page = fetch_json(
-        session,
-        game_history_url,
-        params={
-            "page": 1,
-            "username": username,
-            "platform": platform,
-            "mode": mode,
-        },
-    )
+    if first_page is None:
+        first_page = fetch_json(
+            session,
+            game_history_url,
+            params={
+                "page": 1,
+                "username": username,
+                "platform": platform,
+                "mode": mode,
+            },
+        )
 
     total_pages = int(first_page.get("total_pages", 1))
     pages_to_fetch = min(total_pages, max_pages)
@@ -153,6 +187,121 @@ def is_attributable_user_game(
         return False
 
     return True
+
+
+def resolve_live_history_platform(
+    session: requests.Session,
+    username: str,
+    preferred_platform: str,
+    mode: str,
+) -> Tuple[
+    str,
+    Optional[Dict[str, Any]],
+]:
+    """
+    Resolve the platform identity that provides useful MLBTS
+    game-history data for the searched user.
+
+    The preferred platform is tried first. A candidate is accepted only
+    when its first page contains at least one non-CPU game that can be
+    attributed to the searched username.
+
+    The selected first-page payload is returned with the platform so the
+    full history fetch can reuse it instead of immediately requesting
+    page 1 again.
+
+    If no candidate has an attributable first-page game, fall back to the
+    preferred platform and reuse its payload when one was successfully
+    returned. This preserves the normal full-history behavior for cases
+    where useful games may exist on later pages.
+    """
+    preferred = (
+        preferred_platform
+        .strip()
+        .lower()
+    )
+
+    candidates = _platform_candidates(
+        preferred_platform
+    )
+
+    game_history_url = (
+        f"{BASE_URL}/apis/game_history.json"
+    )
+
+    preferred_payload: Optional[
+        Dict[str, Any]
+    ] = None
+
+    request_count = 0
+
+    for candidate in candidates:
+        if request_count > 0:
+            time.sleep(
+                REQUEST_DELAY_SECONDS
+            )
+
+        request_count += 1
+
+        try:
+            payload = fetch_json(
+                session,
+                game_history_url,
+                params={
+                    "page": 1,
+                    "username": username,
+                    "platform": candidate,
+                    "mode": mode,
+                },
+            )
+        except Exception:
+            continue
+
+        if not isinstance(
+            payload,
+            dict,
+        ):
+            continue
+
+        if (
+            candidate == preferred
+            and preferred_payload is None
+        ):
+            preferred_payload = payload
+
+        games = payload.get(
+            "game_history",
+            [],
+        )
+
+        if not isinstance(
+            games,
+            list,
+        ):
+            continue
+
+        has_attributable_game = any(
+            isinstance(
+                game,
+                dict,
+            )
+            and is_attributable_user_game(
+                game,
+                username,
+            )
+            for game in games
+        )
+
+        if has_attributable_game:
+            return (
+                candidate,
+                payload,
+            )
+
+    return (
+        preferred,
+        preferred_payload,
+    )
 
 
 def get_runs_for_user(
@@ -732,23 +881,9 @@ def resolve_live_log_platform(
         .lower()
     )
 
-    candidates = []
-
-    for candidate in (
-        preferred,
-        "psn",
-        "xbl",
-        "mlbts",
-        "nsw",
-    ):
-        if (
-            candidate
-            and candidate
-            not in candidates
-        ):
-            candidates.append(
-                candidate
-            )
+    candidates = _platform_candidates(
+        preferred_platform
+    )
 
     probe_games = [
         game
@@ -970,13 +1105,46 @@ def build_live_scout_report(
 ) -> Dict[str, Any]:
     session = create_live_session()
 
+    (
+        history_platform,
+        history_first_page,
+    ) = resolve_live_history_platform(
+        session=session,
+        username=config.username,
+        preferred_platform=(
+            config.platform
+        ),
+        mode=config.mode,
+    )
+
+    requested_platform = (
+        config.platform
+        .strip()
+        .lower()
+    )
+
+    if (
+        history_platform
+        != requested_platform
+    ):
+        console.print(
+            f"[yellow]"
+            f"Resolved game-history platform: "
+            f"{requested_platform} -> "
+            f"{history_platform}"
+            f"[/yellow]"
+        )
+
     all_games, pages_fetched = (
         fetch_game_history_for_user(
             session=session,
             username=config.username,
-            platform=config.platform,
+            platform=history_platform,
             mode=config.mode,
             max_pages=config.max_pages,
+            first_page=(
+                history_first_page
+            ),
         )
     )
 
@@ -1104,7 +1272,7 @@ def build_live_scout_report(
             fetch_live_log_stats_concurrently(
                 games=recent_games,
                 username=config.username,
-                platform=config.platform,
+                platform=history_platform,
                 max_workers=config.log_workers,
             )
         )
@@ -1122,9 +1290,7 @@ def build_live_scout_report(
             "era": None,
             "worker_count": 0,
             "game_log_platform": (
-                config.platform
-                .strip()
-                .lower()
+                history_platform
             ),
             "hitter_profiles": {
                 "games_included": 0,
@@ -1135,6 +1301,9 @@ def build_live_scout_report(
     return {
         "username": config.username,
         "platform": config.platform,
+        "history_platform": (
+            history_platform
+        ),
         "mode": config.mode,
         "pages_fetched": pages_fetched,
         "games_found_total": len(all_games),

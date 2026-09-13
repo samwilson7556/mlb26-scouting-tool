@@ -854,11 +854,34 @@ export default function ScoutPage() {
                       </h2>
 
                       <p className="mt-2 text-sm text-slate-400">
-                        Platform:{" "}
+                        Requested:{" "}
                         <span className="font-bold text-white">
                           {
                             liveReport.platform
                           }
+                        </span>{" "}
+                        <span className="text-slate-700">
+                          |
+                        </span>{" "}
+                        History:{" "}
+                        <span className="font-bold text-white">
+                          {
+                            liveReport
+                              .history_platform
+                          }
+                        </span>{" "}
+                        <span className="text-slate-700">
+                          |
+                        </span>{" "}
+                        Game Logs:{" "}
+                        <span className="font-bold text-white">
+                          {liveReport
+                            .advanced_from_game_logs
+                            .logs_requested
+                            ? liveReport
+                                .advanced_from_game_logs
+                                .game_log_platform
+                            : "Not requested"}
                         </span>{" "}
                         <span className="text-slate-700">
                           |
