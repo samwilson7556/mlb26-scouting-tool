@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .analytics import (
+    get_inning_scoring_tendencies,
     get_player_event_analytics,
     get_scouting_trends,
 )
@@ -869,6 +870,31 @@ def get_analytics_trends(
         USERNAME,
         limit=limit,
     )
+
+
+@app.get("/analytics/innings")
+def get_analytics_innings(
+    limit: int = Query(
+        default=20,
+        ge=1,
+        le=200,
+    ),
+    opponent: Optional[str] = Query(
+        default=None,
+    ),
+    conn: sqlite3.Connection = Depends(
+        get_conn
+    ),
+) -> Dict[str, Any]:
+    return {
+        "limit": limit,
+        **get_inning_scoring_tendencies(
+            conn,
+            USERNAME,
+            limit=limit,
+            opponent_name=opponent,
+        ),
+    }
 
 
 @app.get("/analytics/players")

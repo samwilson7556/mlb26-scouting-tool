@@ -77,6 +77,13 @@ export type AnalyticsInningRow = {
 };
 
 
+export type AnalyticsInningsResponse = {
+  limit: number;
+  games_included: number;
+  innings: AnalyticsInningRow[];
+};
+
+
 export type AnalyticsTrendsResponse = {
   limit: number;
   plate_discipline: {
@@ -483,6 +490,30 @@ export async function getAnalyticsTrends(
 
   return apiFetch<AnalyticsTrendsResponse>(
     `/analytics/trends?${searchParams.toString()}`
+  );
+}
+
+
+export async function getAnalyticsInnings(
+  limit = 20,
+  opponent?: string
+): Promise<AnalyticsInningsResponse> {
+  const searchParams = new URLSearchParams({
+    limit: String(limit),
+  });
+
+  const normalizedOpponent =
+    opponent?.trim();
+
+  if (normalizedOpponent) {
+    searchParams.set(
+      "opponent",
+      normalizedOpponent
+    );
+  }
+
+  return apiFetch<AnalyticsInningsResponse>(
+    `/analytics/innings?${searchParams.toString()}`
   );
 }
 

@@ -578,6 +578,126 @@ class ApiRouteIntegrationTests(unittest.TestCase):
             },
         )
 
+    def test_inning_analytics_route_filters_by_opponent(
+        self,
+    ):
+        self.insert_game(
+            game_id="innings-alpha",
+            display_date=(
+                "2026-02-04 12:00:00"
+            ),
+            opponent_name="AlphaOpponent",
+            opponent_team_name="Alpha Team",
+            result="W",
+            user_is_home=True,
+            user_runs=4,
+            opponent_runs=2,
+        )
+
+        self.insert_game(
+            game_id="innings-beta",
+            display_date=(
+                "2026-02-05 12:00:00"
+            ),
+            opponent_name="BetaOpponent",
+            opponent_team_name="Beta Team",
+            result="L",
+            user_is_home=True,
+            user_runs=1,
+            opponent_runs=8,
+        )
+
+        conn = connect_db(self.db_path)
+        init_db(conn)
+
+        conn.executemany(
+            """
+            INSERT INTO game_innings (
+                game_id,
+                inning,
+                home_runs,
+                away_runs
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            [
+                (
+                    "innings-alpha",
+                    1,
+                    3,
+                    1,
+                ),
+                (
+                    "innings-alpha",
+                    2,
+                    1,
+                    1,
+                ),
+                (
+                    "innings-beta",
+                    1,
+                    0,
+                    8,
+                ),
+            ],
+        )
+
+        conn.commit()
+        conn.close()
+
+        response = self.client.get(
+            "/analytics/innings",
+            params={
+                "limit": 1,
+                "opponent": (
+                    "alphaopponent"
+                ),
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        payload = response.json()
+
+        self.assertEqual(
+            payload["limit"],
+            1,
+        )
+        self.assertEqual(
+            payload["games_included"],
+            1,
+        )
+        self.assertEqual(
+            payload["innings"],
+            [
+                {
+                    "inning": 1,
+                    "games_reaching_inning": 1,
+                    "user_innings_observed": 1,
+                    "opponent_innings_observed": 1,
+                    "user_runs": 3,
+                    "opponent_runs": 1,
+                    "user_runs_per_observed_inning": 3.0,
+                    "opponent_runs_per_observed_inning": 1.0,
+                    "run_diff_per_observed_inning": 2.0,
+                },
+                {
+                    "inning": 2,
+                    "games_reaching_inning": 1,
+                    "user_innings_observed": 1,
+                    "opponent_innings_observed": 1,
+                    "user_runs": 1,
+                    "opponent_runs": 1,
+                    "user_runs_per_observed_inning": 1.0,
+                    "opponent_runs_per_observed_inning": 1.0,
+                    "run_diff_per_observed_inning": 0.0,
+                },
+            ],
+        )
+
     def test_player_analytics_route_returns_normalized_event_stats(
         self,
     ):

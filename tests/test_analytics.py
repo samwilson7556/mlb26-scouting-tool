@@ -1194,6 +1194,91 @@ class InningScoringTrendTests(
             ],
         )
 
+    def test_opponent_filter_is_applied_before_limit(
+        self,
+    ):
+        self.insert_game(
+            game_id="alpha-old",
+            display_date=(
+                "2026-01-01 12:00:00"
+            ),
+            user_is_home=True,
+            opponent_name="Alpha",
+            opponent_team_name="Alpha Team",
+        )
+        self.insert_inning(
+            game_id="alpha-old",
+            inning=1,
+            home_runs=1,
+            away_runs=0,
+        )
+
+        self.insert_game(
+            game_id="alpha-new",
+            display_date=(
+                "2026-01-02 12:00:00"
+            ),
+            user_is_home=True,
+            opponent_name="Alpha",
+            opponent_team_name="Alpha Team",
+        )
+        self.insert_inning(
+            game_id="alpha-new",
+            inning=1,
+            home_runs=2,
+            away_runs=1,
+        )
+
+        # This is the newest game overall. If filtering happened
+        # after LIMIT 1, the Alpha report would incorrectly be empty.
+        self.insert_game(
+            game_id="beta-newest",
+            display_date=(
+                "2026-01-03 12:00:00"
+            ),
+            user_is_home=True,
+            opponent_name="Beta",
+            opponent_team_name="Beta Team",
+        )
+        self.insert_inning(
+            game_id="beta-newest",
+            inning=1,
+            home_runs=9,
+            away_runs=8,
+        )
+
+        self.conn.commit()
+
+        report = (
+            get_inning_scoring_tendencies(
+                self.conn,
+                USERNAME,
+                limit=1,
+                opponent_name="ALPHA",
+            )
+        )
+
+        self.assertEqual(
+            report["games_included"],
+            1,
+        )
+        self.assertEqual(
+            report["innings"],
+            [
+                {
+                    "inning": 1,
+                    "games_reaching_inning": 1,
+                    "user_innings_observed": 1,
+                    "opponent_innings_observed": 1,
+                    "user_runs": 2,
+                    "opponent_runs": 1,
+                    "user_runs_per_observed_inning": 2.0,
+                    "opponent_runs_per_observed_inning": 1.0,
+                    "run_diff_per_observed_inning": 1.0,
+                },
+            ],
+        )
+
 
 class MissingInningRunValueTests(
     AnalyticsTestCase

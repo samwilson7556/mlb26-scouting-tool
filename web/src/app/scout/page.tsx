@@ -5,8 +5,10 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { formatGameDateTime } from "@/lib/dates";
 import {
+  AnalyticsInningsResponse,
   AnalyticsPlayersResponse,
   AnalyticsTendencyItem,
+  getAnalyticsInnings,
   getAnalyticsPlayers,
   getAppConfig,
   getLocalOpponent,
@@ -36,6 +38,13 @@ export default function ScoutPage() {
     opponentPlayerReport,
     setOpponentPlayerReport,
   ] = useState<AnalyticsPlayersResponse | null>(
+    null
+  );
+
+  const [
+    opponentInningReport,
+    setOpponentInningReport,
+  ] = useState<AnalyticsInningsResponse | null>(
     null
   );
 
@@ -74,6 +83,7 @@ export default function ScoutPage() {
     setLocalReport(null);
     setLiveReport(null);
     setOpponentPlayerReport(null);
+    setOpponentInningReport(null);
 
     try {
       const result =
@@ -84,14 +94,26 @@ export default function ScoutPage() {
       setLocalReport(result);
 
       if (result.found) {
-        const playerResult =
-          await getAnalyticsPlayers(
+        const [
+          playerResult,
+          inningResult,
+        ] = await Promise.all([
+          getAnalyticsPlayers(
             200,
             trimmedUsername
-          );
+          ),
+          getAnalyticsInnings(
+            200,
+            trimmedUsername
+          ),
+        ]);
 
         setOpponentPlayerReport(
           playerResult
+        );
+
+        setOpponentInningReport(
+          inningResult
         );
       }
     } catch (err) {
@@ -119,6 +141,7 @@ export default function ScoutPage() {
     setLocalReport(null);
     setLiveReport(null);
     setOpponentPlayerReport(null);
+    setOpponentInningReport(null);
 
     try {
       const result = await liveScout({
@@ -403,6 +426,132 @@ export default function ScoutPage() {
                   </div>
                 )}
               </div>
+
+              {localReport.found
+                && opponentInningReport && (
+                <div className="card">
+                  <div>
+                    <h2 className="text-xl font-bold text-white">
+                      Scoring by Inning
+                    </h2>
+
+                    <p className="mt-1 text-sm text-slate-500">
+                      {
+                        opponentInningReport
+                          .games_included
+                      }{" "}
+                      {opponentInningReport.games_included === 1
+                        ? "game"
+                        : "games"}{" "}
+                      with inning scoring
+                      available
+                      {opponentInningReport.games_included > 1
+                        ? "; values are averages per observed inning."
+                        : "."}
+                    </p>
+                  </div>
+
+                  {opponentInningReport
+                    .innings.length === 0 ? (
+                    <div className="mt-6 rounded-xl border border-dashed border-slate-800 p-8 text-center text-sm text-slate-500">
+                      No inning scoring data
+                      is available for this
+                      opponent yet.
+                    </div>
+                  ) : (
+                    <div className="mlb-table-wrap mt-5">
+                      <table className="mlb-table min-w-[620px]">
+                        <thead>
+                          <tr>
+                            <th>Inning</th>
+
+                            <th className="numeric">
+                              You
+                            </th>
+
+                            <th className="numeric">
+                              Opponent
+                            </th>
+
+                            <th className="numeric divider-left">
+                              Diff
+                            </th>
+
+                            <th className="numeric">
+                              Games
+                            </th>
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          {opponentInningReport
+                            .innings
+                            .map((inning) => {
+                              const diff =
+                                inning
+                                  .run_diff_per_observed_inning;
+
+                              const diffClass =
+                                diff === null
+                                  ? "text-slate-500"
+                                  : diff > 0
+                                    ? "text-emerald-400"
+                                    : diff < 0
+                                      ? "text-red-400"
+                                      : "text-slate-300";
+
+                              return (
+                                <tr
+                                  key={
+                                    inning.inning
+                                  }
+                                >
+                                  <td className="primary">
+                                    {
+                                      inning
+                                        .inning
+                                    }
+                                  </td>
+
+                                  <td className="numeric">
+                                    {formatRunValue(
+                                      inning
+                                        .user_runs_per_observed_inning
+                                    )}
+                                  </td>
+
+                                  <td className="numeric">
+                                    {formatRunValue(
+                                      inning
+                                        .opponent_runs_per_observed_inning
+                                    )}
+                                  </td>
+
+                                  <td
+                                    className={
+                                      `numeric divider-left font-bold ${diffClass}`
+                                    }
+                                  >
+                                    {formatRunDiff(
+                                      diff
+                                    )}
+                                  </td>
+
+                                  <td className="numeric">
+                                    {
+                                      inning
+                                        .games_reaching_inning
+                                    }
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {localReport.found
                 && opponentPlayerReport && (
@@ -1213,6 +1362,40 @@ function formatPercent(
   return value === null
     ? "N/A"
     : `${value.toFixed(1)}%`;
+}
+
+
+function formatRunValue(
+  value: number | null
+): string {
+  if (value === null) {
+    return "N/A";
+  }
+
+  if (Number.isInteger(value)) {
+    return String(value);
+  }
+
+  return value
+    .toFixed(2)
+    .replace(/0+$/, "")
+    .replace(/\.$/, "");
+}
+
+
+function formatRunDiff(
+  value: number | null
+): string {
+  if (value === null) {
+    return "N/A";
+  }
+
+  const formatted =
+    formatRunValue(value);
+
+  return value > 0
+    ? `+${formatted}`
+    : formatted;
 }
 
 

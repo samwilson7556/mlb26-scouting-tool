@@ -122,7 +122,15 @@ def _load_recent_games_with_box_scores(
 def _load_recent_games_with_innings(
     conn: sqlite3.Connection,
     limit: int,
+    opponent_name: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
+    normalized_opponent = (
+        opponent_name.strip()
+        if opponent_name
+        and opponent_name.strip()
+        else None
+    )
+
     rows = conn.execute(
         """
         SELECT
@@ -140,12 +148,20 @@ def _load_recent_games_with_innings(
             FROM game_innings AS gi
             WHERE gi.game_id = games.id
         )
+          AND (
+              ? IS NULL
+              OR LOWER(opponent_name) = LOWER(?)
+          )
         ORDER BY
             display_date DESC,
             id DESC
         LIMIT ?
         """,
-        (limit,),
+        (
+            normalized_opponent,
+            normalized_opponent,
+            limit,
+        ),
     ).fetchall()
 
     return [
@@ -1069,10 +1085,14 @@ def get_inning_scoring_tendencies(
     conn: sqlite3.Connection,
     username: str,
     limit: int = 20,
+    opponent_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Aggregate user/opponent scoring by inning over the most recent games with
     structured line-score rows.
+
+    When opponent_name is supplied, the opponent filter is applied before the
+    game limit so the window represents that opponent's most recent matchups.
 
     Runs are averaged only across observed half-innings for each side.
     This keeps unplayed bottom halves and source rows with unavailable
@@ -1082,6 +1102,7 @@ def get_inning_scoring_tendencies(
         _load_recent_games_with_innings(
             conn,
             limit,
+            opponent_name=opponent_name,
         )
     )
 
