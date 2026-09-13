@@ -182,6 +182,14 @@ class DatabaseSchemaTests(
             )
         )
 
+        self.assertTrue(
+            column_exists(
+                self.conn,
+                "game_events",
+                "terminal_pitch_location",
+            )
+        )
+
 
 class LegacyDatabaseMigrationTests(
     unittest.TestCase
@@ -267,6 +275,49 @@ class LegacyDatabaseMigrationTests(
                     conn,
                     "player_pitching_stats",
                     "pitching_outs",
+                )
+            )
+
+            conn.close()
+
+    def test_init_db_migrates_legacy_game_events(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = (
+                Path(temp_dir)
+                / "legacy-events.sqlite3"
+            )
+
+            conn = sqlite3.connect(
+                db_path
+            )
+            conn.row_factory = sqlite3.Row
+
+            conn.execute(
+                """
+                CREATE TABLE game_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT
+                )
+                """
+            )
+            conn.commit()
+
+            self.assertFalse(
+                column_exists(
+                    conn,
+                    "game_events",
+                    "terminal_pitch_location",
+                )
+            )
+
+            init_db(conn)
+
+            self.assertTrue(
+                column_exists(
+                    conn,
+                    "game_events",
+                    "terminal_pitch_location",
                 )
             )
 
@@ -837,7 +888,8 @@ class NormalizedGamePersistenceTests(
         batting_team: str = "Home Team",
         innings: int = 2,
         second_event: str = (
-            "Batter struck out on a slider."
+            "Batter struck out chasing "
+            "a slider low and away."
         ),
     ) -> dict:
         return {
@@ -954,6 +1006,7 @@ class NormalizedGamePersistenceTests(
                     batting_side,
                     event_type,
                     player_name,
+                    terminal_pitch_location,
                     parser_version
                 FROM game_events
                 WHERE game_id = ?
@@ -984,10 +1037,17 @@ class NormalizedGamePersistenceTests(
             )
         )
 
+        self.assertEqual(
+            event_rows[-1][
+                "terminal_pitch_location"
+            ],
+            "low_away",
+        )
+
         self.assertTrue(
             all(
                 row["parser_version"]
-                == 3
+                == 4
                 for row in event_rows
             )
         )

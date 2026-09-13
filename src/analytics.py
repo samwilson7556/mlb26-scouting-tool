@@ -38,6 +38,52 @@ def _percentage(
     )
 
 
+def _increment_category_count(
+    counts: Dict[str, int],
+    value: Any,
+) -> None:
+    normalized = " ".join(
+        str(value or "").split()
+    ).casefold()
+
+    if not normalized:
+        return
+
+    counts[normalized] = (
+        counts.get(
+            normalized,
+            0,
+        )
+        + 1
+    )
+
+
+def _category_breakdown(
+    counts: Dict[str, int],
+) -> List[Dict[str, Any]]:
+    total = sum(
+        counts.values()
+    )
+
+    return [
+        {
+            "value": value,
+            "count": count,
+            "pct": _percentage(
+                count,
+                total,
+            ),
+        }
+        for value, count in sorted(
+            counts.items(),
+            key=lambda item: (
+                -item[1],
+                item[0],
+            ),
+        )
+    ]
+
+
 def _load_recent_games_with_box_scores(
     conn: sqlite3.Connection,
     limit: int,
@@ -266,7 +312,10 @@ def _load_game_events(
             is_plate_appearance,
             is_hit,
             hit_bases,
-            cause
+            cause,
+            strikeout_type,
+            terminal_pitch_type,
+            terminal_pitch_location
         FROM game_events
         WHERE game_id IN ({placeholders})
         ORDER BY
@@ -512,6 +561,9 @@ def get_player_event_analytics(
                     "stolen_bases": 0,
                     "caught_stealing": 0,
                     "picked_off": 0,
+                    "_strikeout_pitches": {},
+                    "_strikeout_locations": {},
+                    "_strikeout_styles": {},
                 }
 
                 if scope == "opponent":
@@ -581,6 +633,31 @@ def get_player_event_analytics(
                 bucket[
                     "strikeouts"
                 ] += 1
+
+                _increment_category_count(
+                    bucket[
+                        "_strikeout_pitches"
+                    ],
+                    event.get(
+                        "terminal_pitch_type"
+                    ),
+                )
+                _increment_category_count(
+                    bucket[
+                        "_strikeout_locations"
+                    ],
+                    event.get(
+                        "terminal_pitch_location"
+                    ),
+                )
+                _increment_category_count(
+                    bucket[
+                        "_strikeout_styles"
+                    ],
+                    event.get(
+                        "strikeout_type"
+                    ),
+                )
 
             elif event_type == "sacrifice_fly":
                 bucket[
@@ -658,7 +735,52 @@ def get_player_event_analytics(
                 key: value
                 for key, value
                 in bucket.items()
-                if key != "_games"
+                if not key.startswith("_")
+            }
+
+            pitch_counts = bucket[
+                "_strikeout_pitches"
+            ]
+            location_counts = bucket[
+                "_strikeout_locations"
+            ]
+            style_counts = bucket[
+                "_strikeout_styles"
+            ]
+
+            row[
+                "strikeout_tendencies"
+            ] = {
+                "with_finishing_pitch": (
+                    sum(
+                        pitch_counts.values()
+                    )
+                ),
+                "with_location": (
+                    sum(
+                        location_counts.values()
+                    )
+                ),
+                "with_style": (
+                    sum(
+                        style_counts.values()
+                    )
+                ),
+                "finishing_pitches": (
+                    _category_breakdown(
+                        pitch_counts
+                    )
+                ),
+                "locations": (
+                    _category_breakdown(
+                        location_counts
+                    )
+                ),
+                "styles": (
+                    _category_breakdown(
+                        style_counts
+                    )
+                ),
             }
 
             row["games"] = len(

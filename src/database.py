@@ -214,6 +214,7 @@ def init_db(
             strikeout_type TEXT,
             home_run_distance_ft INTEGER,
             terminal_pitch_type TEXT,
+            terminal_pitch_location TEXT,
             secondary_out INTEGER NOT NULL DEFAULT 0,
             parser_version INTEGER NOT NULL DEFAULT 1,
             UNIQUE(game_id, source_index),
@@ -236,6 +237,15 @@ def init_db(
         "player_pitching_stats",
         "pitching_outs",
         "INTEGER",
+    )
+
+    # Migration support for databases created before
+    # terminal_pitch_location existed.
+    ensure_column(
+        conn,
+        "game_events",
+        "terminal_pitch_location",
+        "TEXT",
     )
 
     conn.commit()

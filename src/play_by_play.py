@@ -200,6 +200,59 @@ def _terminal_pitch_type(
     return match.group(1).lower()
 
 
+def _terminal_pitch_location(
+    statement: str,
+) -> Optional[str]:
+    patterns = (
+        (
+            "low_in",
+            r"\blow and in\b",
+        ),
+        (
+            "low_away",
+            r"\blow and away\b",
+        ),
+        (
+            "high_in",
+            r"\bhigh and in\b",
+        ),
+        (
+            "high_away",
+            r"\bhigh and away\b",
+        ),
+        (
+            "middle",
+            r"\bdown the middle\b",
+        ),
+        (
+            "inside",
+            r"\binside\b",
+        ),
+        (
+            "outside",
+            r"\boutside\b",
+        ),
+        (
+            "low",
+            r"\blow\b",
+        ),
+        (
+            "high",
+            r"\bhigh\b",
+        ),
+    )
+
+    for location, pattern in patterns:
+        if re.search(
+            pattern,
+            statement,
+            flags=re.IGNORECASE,
+        ):
+            return location
+
+    return None
+
+
 def _event(
     *,
     event_type: str,
@@ -216,6 +269,7 @@ def _event(
     strikeout_type: Optional[str] = None,
     home_run_distance_ft: Optional[int] = None,
     terminal_pitch_type: Optional[str] = None,
+    terminal_pitch_location: Optional[str] = None,
     secondary_out: bool = False,
     related_player_name: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -237,6 +291,9 @@ def _event(
         ),
         "terminal_pitch_type": (
             terminal_pitch_type
+        ),
+        "terminal_pitch_location": (
+            terminal_pitch_location
         ),
         "secondary_out": secondary_out,
         "related_player_name": (
@@ -460,6 +517,11 @@ def classify_play_statement(
             strikeout_type=strikeout_type,
             terminal_pitch_type=(
                 _terminal_pitch_type(
+                    statement
+                )
+            ),
+            terminal_pitch_location=(
+                _terminal_pitch_location(
                     statement
                 )
             ),

@@ -161,6 +161,9 @@ class AnalyticsTestCase(
         is_hit: bool = False,
         hit_bases=None,
         cause=None,
+        strikeout_type=None,
+        terminal_pitch_type=None,
+        terminal_pitch_location=None,
     ) -> None:
         self.conn.execute(
             """
@@ -175,9 +178,15 @@ class AnalyticsTestCase(
                 is_plate_appearance,
                 is_hit,
                 hit_bases,
-                cause
+                cause,
+                strikeout_type,
+                terminal_pitch_type,
+                terminal_pitch_location
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?
+            )
             """,
             (
                 game_id,
@@ -193,6 +202,9 @@ class AnalyticsTestCase(
                 int(is_hit),
                 hit_bases,
                 cause,
+                strikeout_type,
+                terminal_pitch_type,
+                terminal_pitch_location,
             ),
         )
 
@@ -515,6 +527,192 @@ class PlayerEventAnalyticsTests(
         self.assertNotIn(
             "Ghost Batter",
             all_names,
+        )
+
+    def test_strikeout_tendencies_are_aggregated_by_hitter(
+        self,
+    ):
+        self.insert_game(
+            game_id="strikeout-game",
+            display_date=(
+                "2026-01-03 12:00:00"
+            ),
+            user_is_home=True,
+            opponent_name="Alpha",
+            opponent_team_name="Alpha Team",
+        )
+
+        strikeouts = [
+            (
+                "slider",
+                "low_away",
+                "chasing",
+            ),
+            (
+                "slider",
+                "low_away",
+                "chasing",
+            ),
+            (
+                "fastball",
+                "high_in",
+                "looking",
+            ),
+            (
+                "changeup",
+                "middle",
+                "swinging_late",
+            ),
+            (
+                None,
+                None,
+                None,
+            ),
+        ]
+
+        for source_index, (
+            pitch,
+            location,
+            style,
+        ) in enumerate(
+            strikeouts,
+            start=1,
+        ):
+            self.insert_event(
+                game_id="strikeout-game",
+                source_index=source_index,
+                batting_side="away",
+                event_type="strikeout",
+                player_name=(
+                    "Opponent Batter"
+                ),
+                is_plate_appearance=True,
+                strikeout_type=style,
+                terminal_pitch_type=pitch,
+                terminal_pitch_location=(
+                    location
+                ),
+            )
+
+        self.conn.commit()
+
+        report = get_player_event_analytics(
+            self.conn,
+            USERNAME,
+            limit=20,
+            opponent_name="alpha",
+        )
+
+        self.assertEqual(
+            report["games_included"],
+            1,
+        )
+        self.assertEqual(
+            len(
+                report[
+                    "opponent_players"
+                ]
+            ),
+            1,
+        )
+
+        hitter = report[
+            "opponent_players"
+        ][0]
+
+        self.assertEqual(
+            hitter["strikeouts"],
+            5,
+        )
+
+        tendencies = hitter[
+            "strikeout_tendencies"
+        ]
+
+        self.assertEqual(
+            tendencies[
+                "with_finishing_pitch"
+            ],
+            4,
+        )
+        self.assertEqual(
+            tendencies[
+                "with_location"
+            ],
+            4,
+        )
+        self.assertEqual(
+            tendencies[
+                "with_style"
+            ],
+            4,
+        )
+
+        self.assertEqual(
+            tendencies[
+                "finishing_pitches"
+            ],
+            [
+                {
+                    "value": "slider",
+                    "count": 2,
+                    "pct": 50.0,
+                },
+                {
+                    "value": "changeup",
+                    "count": 1,
+                    "pct": 25.0,
+                },
+                {
+                    "value": "fastball",
+                    "count": 1,
+                    "pct": 25.0,
+                },
+            ],
+        )
+
+        self.assertEqual(
+            tendencies["locations"],
+            [
+                {
+                    "value": "low_away",
+                    "count": 2,
+                    "pct": 50.0,
+                },
+                {
+                    "value": "high_in",
+                    "count": 1,
+                    "pct": 25.0,
+                },
+                {
+                    "value": "middle",
+                    "count": 1,
+                    "pct": 25.0,
+                },
+            ],
+        )
+
+        self.assertEqual(
+            tendencies["styles"],
+            [
+                {
+                    "value": "chasing",
+                    "count": 2,
+                    "pct": 50.0,
+                },
+                {
+                    "value": "looking",
+                    "count": 1,
+                    "pct": 25.0,
+                },
+                {
+                    "value": (
+                        "swinging_late"
+                    ),
+                    "count": 1,
+                    "pct": 25.0,
+                },
+            ],
         )
 
     def test_player_identity_ignores_team_rename_but_respects_opponent_account(

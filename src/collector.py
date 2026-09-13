@@ -1336,12 +1336,13 @@ def save_play_by_play_sections(
                 strikeout_type,
                 home_run_distance_ft,
                 terminal_pitch_type,
+                terminal_pitch_location,
                 secondary_out,
                 parser_version
             )
             VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
             """,
             (
@@ -1408,6 +1409,9 @@ def save_play_by_play_sections(
                 event.get(
                     "terminal_pitch_type"
                 ),
+                event.get(
+                    "terminal_pitch_location"
+                ),
                 int(
                     bool(
                         event.get(
@@ -1415,7 +1419,7 @@ def save_play_by_play_sections(
                         )
                     )
                 ),
-                3,
+                4,
             ),
         )
 

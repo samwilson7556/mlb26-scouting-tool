@@ -156,6 +156,87 @@ class PlayClassificationTests(unittest.TestCase):
             ],
             "sinker",
         )
+        self.assertEqual(
+            chasing[
+                "terminal_pitch_location"
+            ],
+            "low",
+        )
+        self.assertEqual(
+            looking[
+                "terminal_pitch_location"
+            ],
+            "high_in",
+        )
+
+    def test_strikeout_terminal_pitch_locations(self):
+        cases = {
+            (
+                "Batter struck out chasing "
+                "a slider low and in."
+            ): "low_in",
+            (
+                "Batter struck out chasing "
+                "a slider low and away."
+            ): "low_away",
+            (
+                "Batter struck out chasing "
+                "a fastball high and in."
+            ): "high_in",
+            (
+                "Batter struck out chasing "
+                "a fastball high and away."
+            ): "high_away",
+            (
+                "Batter struck out chasing "
+                "an inside fastball."
+            ): "inside",
+            (
+                "Batter struck out chasing "
+                "an outside fastball."
+            ): "outside",
+            (
+                "Batter struck out chasing "
+                "a low changeup."
+            ): "low",
+            (
+                "Batter struck out chasing "
+                "a high fastball."
+            ): "high",
+            (
+                "Batter struck out on a "
+                "curveball down the middle."
+            ): "middle",
+        }
+
+        for statement, expected in cases.items():
+            with self.subTest(
+                statement=statement
+            ):
+                event = (
+                    classify_play_statement(
+                        statement
+                    )
+                )
+
+                self.assertEqual(
+                    event[
+                        "terminal_pitch_location"
+                    ],
+                    expected,
+                )
+
+        no_location = (
+            classify_play_statement(
+                "Batter struck out swinging."
+            )
+        )
+
+        self.assertIsNone(
+            no_location[
+                "terminal_pitch_location"
+            ]
+        )
 
     def test_batted_ball_outs_and_double_play(self):
         ground_out = (

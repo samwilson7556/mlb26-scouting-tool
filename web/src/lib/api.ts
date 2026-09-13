@@ -100,6 +100,23 @@ export type AnalyticsTrendsResponse = {
 };
 
 
+export type AnalyticsTendencyItem = {
+  value: string;
+  count: number;
+  pct: number | null;
+};
+
+
+export type AnalyticsStrikeoutTendencies = {
+  with_finishing_pitch: number;
+  with_location: number;
+  with_style: number;
+  finishing_pitches: AnalyticsTendencyItem[];
+  locations: AnalyticsTendencyItem[];
+  styles: AnalyticsTendencyItem[];
+};
+
+
 export type AnalyticsPlayerRow = {
   player_name: string;
   team_name: string;
@@ -128,6 +145,7 @@ export type AnalyticsPlayerRow = {
   walk_pct: number | null;
   strikeout_pct: number | null;
   home_run_pct: number | null;
+  strikeout_tendencies: AnalyticsStrikeoutTendencies;
 };
 
 
@@ -207,6 +225,7 @@ export type GameEvent = {
   strikeout_type: string | null;
   home_run_distance_ft: number | null;
   terminal_pitch_type: string | null;
+  terminal_pitch_location: string | null;
   secondary_out: number;
   parser_version: number;
 };
