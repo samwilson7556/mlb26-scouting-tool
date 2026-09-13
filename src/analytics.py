@@ -25,6 +25,19 @@ def _average(
     )
 
 
+def _percentage(
+    count: int,
+    total: int,
+) -> Optional[float]:
+    if total <= 0:
+        return None
+
+    return round(
+        (count / total) * 100,
+        1,
+    )
+
+
 def _load_recent_games_with_box_scores(
     conn: sqlite3.Connection,
     limit: int,
@@ -178,6 +191,90 @@ def _load_innings(
     return grouped
 
 
+def _load_recent_games_with_events(
+    conn: sqlite3.Connection,
+    limit: int,
+) -> List[Dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT
+            id,
+            display_date,
+            home_full_name,
+            away_full_name,
+            home_name,
+            away_name,
+            opponent_name,
+            opponent_team_name
+        FROM games
+        WHERE EXISTS (
+            SELECT 1
+            FROM game_events AS ge
+            WHERE ge.game_id = games.id
+        )
+        ORDER BY
+            display_date DESC,
+            id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    return [
+        dict(row)
+        for row in rows
+    ]
+
+
+def _load_game_events(
+    conn: sqlite3.Connection,
+    game_ids: List[str],
+) -> Dict[str, List[Dict[str, Any]]]:
+    if not game_ids:
+        return {}
+
+    placeholders = ", ".join(
+        "?"
+        for _ in game_ids
+    )
+
+    rows = conn.execute(
+        f"""
+        SELECT
+            game_id,
+            source_index,
+            batting_side,
+            batting_team_name,
+            event_type,
+            player_name,
+            is_plate_appearance,
+            is_hit,
+            hit_bases,
+            cause
+        FROM game_events
+        WHERE game_id IN ({placeholders})
+        ORDER BY
+            game_id,
+            source_index
+        """,
+        game_ids,
+    ).fetchall()
+
+    grouped: Dict[
+        str,
+        List[Dict[str, Any]],
+    ] = {}
+
+    for row in rows:
+        item = dict(row)
+        grouped.setdefault(
+            item["game_id"],
+            [],
+        ).append(item)
+
+    return grouped
+
+
 def _find_team_box_score(
     rows: List[Dict[str, Any]],
     team_name: Any,
@@ -199,6 +296,416 @@ def _find_team_box_score(
             return row
 
     return None
+
+
+def get_player_event_analytics(
+    conn: sqlite3.Connection,
+    username: str,
+    limit: int = 20,
+) -> Dict[str, Any]:
+    """
+    Aggregate normalized offensive events by player.
+
+    The most recent `limit` games containing normalized game events are
+    considered. Events are attributed to the configured user or opponent
+    from the persisted batting_side plus get_user_side().
+
+    User hitters are grouped by normalized player name so a custom-team
+    rename does not split their history. Opponent hitters are grouped by
+    opponent account plus normalized player name so unrelated opponents
+    with the same displayed hitter name are never merged.
+
+    Plate appearances come from the normalized is_plate_appearance flag.
+    At-bats exclude walks, hit-by-pitches, sacrifice flies, and sacrifice
+    bunts. Non-PA baserunning events are retained for runs, steals,
+    caught-stealing, and pickoff totals.
+    """
+    games = _load_recent_games_with_events(
+        conn,
+        limit,
+    )
+
+    events_by_game = _load_game_events(
+        conn,
+        [
+            game["id"]
+            for game in games
+        ],
+    )
+
+    player_buckets: Dict[
+        str,
+        Dict[Any, Dict[str, Any]],
+    ] = {
+        "user": {},
+        "opponent": {},
+    }
+
+    games_included = 0
+
+    tracked_non_pa_events = {
+        "runner_scored",
+        "stolen_base",
+        "caught_stealing",
+        "picked_off",
+    }
+
+    for game in games:
+        user_side = get_user_side(
+            game,
+            username,
+        )
+
+        if user_side not in {
+            "home",
+            "away",
+        }:
+            continue
+
+        games_included += 1
+
+        for event in events_by_game.get(
+            game["id"],
+            [],
+        ):
+            batting_side = event.get(
+                "batting_side"
+            )
+
+            if batting_side not in {
+                "home",
+                "away",
+            }:
+                continue
+
+            is_plate_appearance = bool(
+                safe_int(
+                    event.get(
+                        "is_plate_appearance"
+                    )
+                )
+            )
+
+            event_type = str(
+                event.get("event_type")
+                or ""
+            )
+
+            if (
+                not is_plate_appearance
+                and event_type
+                not in tracked_non_pa_events
+            ):
+                continue
+
+            player_name = " ".join(
+                str(
+                    event.get(
+                        "player_name"
+                    )
+                    or ""
+                ).split()
+            )
+
+            if not player_name:
+                continue
+
+            scope = (
+                "user"
+                if batting_side == user_side
+                else "opponent"
+            )
+
+            team_name = (
+                game.get(
+                    f"{batting_side}_full_name"
+                )
+                or event.get(
+                    "batting_team_name"
+                )
+                or "Unknown Team"
+            )
+
+            normalized_player_name = (
+                player_name.casefold()
+            )
+
+            if scope == "user":
+                key = (
+                    normalized_player_name
+                )
+                opponent_name = None
+            else:
+                opponent_name = " ".join(
+                    str(
+                        game.get(
+                            "opponent_name"
+                        )
+                        or ""
+                    ).split()
+                )
+
+                opponent_identity = (
+                    opponent_name.casefold()
+                    if opponent_name
+                    else (
+                        str(
+                            team_name
+                        ).casefold()
+                    )
+                )
+
+                key = (
+                    opponent_identity,
+                    normalized_player_name,
+                )
+
+            bucket = player_buckets[
+                scope
+            ].get(key)
+
+            if bucket is None:
+                bucket = {
+                    "player_name": (
+                        player_name
+                    ),
+                    "team_name": (
+                        str(team_name)
+                    ),
+                    "_games": set(),
+                    "plate_appearances": 0,
+                    "hits": 0,
+                    "singles": 0,
+                    "doubles": 0,
+                    "triples": 0,
+                    "home_runs": 0,
+                    "walks": 0,
+                    "intentional_walks": 0,
+                    "hit_by_pitch": 0,
+                    "strikeouts": 0,
+                    "sacrifice_flies": 0,
+                    "sacrifice_bunts": 0,
+                    "double_plays": 0,
+                    "triple_plays": 0,
+                    "runs": 0,
+                    "stolen_bases": 0,
+                    "caught_stealing": 0,
+                    "picked_off": 0,
+                }
+
+                if scope == "opponent":
+                    bucket[
+                        "opponent_name"
+                    ] = (
+                        opponent_name
+                        or None
+                    )
+
+                player_buckets[
+                    scope
+                ][key] = bucket
+
+            bucket["_games"].add(
+                game["id"]
+            )
+
+            if is_plate_appearance:
+                bucket[
+                    "plate_appearances"
+                ] += 1
+
+            if bool(
+                safe_int(
+                    event.get(
+                        "is_hit"
+                    )
+                )
+            ):
+                bucket["hits"] += 1
+
+                hit_bases = safe_int(
+                    event.get(
+                        "hit_bases"
+                    )
+                )
+
+                if hit_bases == 1:
+                    bucket["singles"] += 1
+                elif hit_bases == 2:
+                    bucket["doubles"] += 1
+                elif hit_bases == 3:
+                    bucket["triples"] += 1
+                elif hit_bases == 4:
+                    bucket[
+                        "home_runs"
+                    ] += 1
+
+            if event_type == "walk":
+                bucket["walks"] += 1
+
+                if (
+                    event.get("cause")
+                    == "intentional_walk"
+                ):
+                    bucket[
+                        "intentional_walks"
+                    ] += 1
+
+            elif event_type == "hit_by_pitch":
+                bucket[
+                    "hit_by_pitch"
+                ] += 1
+
+            elif event_type == "strikeout":
+                bucket[
+                    "strikeouts"
+                ] += 1
+
+            elif event_type == "sacrifice_fly":
+                bucket[
+                    "sacrifice_flies"
+                ] += 1
+
+            elif event_type == "sacrifice_bunt":
+                bucket[
+                    "sacrifice_bunts"
+                ] += 1
+
+            elif event_type == "double_play":
+                bucket[
+                    "double_plays"
+                ] += 1
+
+            elif event_type == "triple_play":
+                bucket[
+                    "triple_plays"
+                ] += 1
+
+            elif event_type == "runner_scored":
+                bucket["runs"] += 1
+
+            elif event_type == "stolen_base":
+                bucket[
+                    "stolen_bases"
+                ] += 1
+
+            elif event_type == "caught_stealing":
+                bucket[
+                    "caught_stealing"
+                ] += 1
+
+            elif event_type == "picked_off":
+                bucket[
+                    "picked_off"
+                ] += 1
+
+    def finalize(
+        buckets: Dict[
+            Any,
+            Dict[str, Any],
+        ],
+    ) -> List[Dict[str, Any]]:
+        rows: List[
+            Dict[str, Any]
+        ] = []
+
+        for bucket in buckets.values():
+            plate_appearances = bucket[
+                "plate_appearances"
+            ]
+
+            at_bats = max(
+                0,
+                (
+                    plate_appearances
+                    - bucket["walks"]
+                    - bucket[
+                        "hit_by_pitch"
+                    ]
+                    - bucket[
+                        "sacrifice_flies"
+                    ]
+                    - bucket[
+                        "sacrifice_bunts"
+                    ]
+                ),
+            )
+
+            hits = bucket["hits"]
+
+            row = {
+                key: value
+                for key, value
+                in bucket.items()
+                if key != "_games"
+            }
+
+            row["games"] = len(
+                bucket["_games"]
+            )
+            row["at_bats"] = at_bats
+            row["batting_average"] = (
+                round(
+                    hits / at_bats,
+                    3,
+                )
+                if at_bats > 0
+                else None
+            )
+            row["walk_pct"] = (
+                _percentage(
+                    bucket["walks"],
+                    plate_appearances,
+                )
+            )
+            row["strikeout_pct"] = (
+                _percentage(
+                    bucket[
+                        "strikeouts"
+                    ],
+                    plate_appearances,
+                )
+            )
+            row["home_run_pct"] = (
+                _percentage(
+                    bucket[
+                        "home_runs"
+                    ],
+                    plate_appearances,
+                )
+            )
+
+            rows.append(row)
+
+        return sorted(
+            rows,
+            key=lambda row: (
+                -row[
+                    "plate_appearances"
+                ],
+                -row["home_runs"],
+                row[
+                    "player_name"
+                ].casefold(),
+                row[
+                    "team_name"
+                ].casefold(),
+            ),
+        )
+
+    return {
+        "games_included": (
+            games_included
+        ),
+        "user_players": finalize(
+            player_buckets["user"]
+        ),
+        "opponent_players": finalize(
+            player_buckets[
+                "opponent"
+            ]
+        ),
+    }
 
 
 def get_plate_discipline_trends(

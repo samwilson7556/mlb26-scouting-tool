@@ -5,6 +5,7 @@ from pathlib import Path
 from src.analytics import (
     get_inning_scoring_tendencies,
     get_plate_discipline_trends,
+    get_player_event_analytics,
     get_scouting_trends,
 )
 from src.config import USERNAME
@@ -145,6 +146,524 @@ class AnalyticsTestCase(
                 home_runs,
                 away_runs,
             ),
+        )
+
+
+    def insert_event(
+        self,
+        *,
+        game_id: str,
+        source_index: int,
+        batting_side: str,
+        event_type: str,
+        player_name: str,
+        is_plate_appearance: bool = False,
+        is_hit: bool = False,
+        hit_bases=None,
+        cause=None,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO game_events (
+                game_id,
+                source_index,
+                inning,
+                batting_side,
+                event_type,
+                player_name,
+                raw_text,
+                is_plate_appearance,
+                is_hit,
+                hit_bases,
+                cause
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                game_id,
+                source_index,
+                1,
+                batting_side,
+                event_type,
+                player_name,
+                event_type,
+                int(
+                    is_plate_appearance
+                ),
+                int(is_hit),
+                hit_bases,
+                cause,
+            ),
+        )
+
+
+class PlayerEventAnalyticsTests(
+    AnalyticsTestCase
+):
+    def test_player_events_are_attributed_and_aggregated(
+        self,
+    ):
+        self.insert_game(
+            game_id="game-1",
+            display_date=(
+                "2026-01-01 12:00:00"
+            ),
+            user_is_home=True,
+            opponent_name="Alpha",
+            opponent_team_name=(
+                "Alpha Team"
+            ),
+        )
+
+        self.insert_event(
+            game_id="game-1",
+            source_index=1,
+            batting_side="home",
+            event_type="single",
+            player_name="User Batter",
+            is_plate_appearance=True,
+            is_hit=True,
+            hit_bases=1,
+        )
+        self.insert_event(
+            game_id="game-1",
+            source_index=2,
+            batting_side="home",
+            event_type="walk",
+            player_name="User Batter",
+            is_plate_appearance=True,
+            cause="intentional_walk",
+        )
+        self.insert_event(
+            game_id="game-1",
+            source_index=3,
+            batting_side="home",
+            event_type="strikeout",
+            player_name="User Batter",
+            is_plate_appearance=True,
+        )
+        self.insert_event(
+            game_id="game-1",
+            source_index=4,
+            batting_side="home",
+            event_type="sacrifice_fly",
+            player_name="User Batter",
+            is_plate_appearance=True,
+        )
+        self.insert_event(
+            game_id="game-1",
+            source_index=5,
+            batting_side="home",
+            event_type="runner_scored",
+            player_name="User Batter",
+        )
+        self.insert_event(
+            game_id="game-1",
+            source_index=6,
+            batting_side="home",
+            event_type="stolen_base",
+            player_name="User Batter",
+        )
+
+        self.insert_event(
+            game_id="game-1",
+            source_index=7,
+            batting_side="away",
+            event_type="home_run",
+            player_name="Opponent Slugger",
+            is_plate_appearance=True,
+            is_hit=True,
+            hit_bases=4,
+        )
+        self.insert_event(
+            game_id="game-1",
+            source_index=8,
+            batting_side="away",
+            event_type="hit_by_pitch",
+            player_name="Opponent Slugger",
+            is_plate_appearance=True,
+        )
+        self.insert_event(
+            game_id="game-1",
+            source_index=9,
+            batting_side="away",
+            event_type="caught_stealing",
+            player_name="Opponent Slugger",
+        )
+
+        # Marker events must not create fake hitter rows.
+        self.insert_event(
+            game_id="game-1",
+            source_index=10,
+            batting_side="home",
+            event_type="pitcher_marker",
+            player_name="Some Pitcher",
+        )
+
+        self.insert_game(
+            game_id="game-2",
+            display_date=(
+                "2026-01-02 12:00:00"
+            ),
+            user_is_home=False,
+            opponent_name="Beta",
+            opponent_team_name=(
+                "Beta Team"
+            ),
+        )
+
+        self.insert_event(
+            game_id="game-2",
+            source_index=1,
+            batting_side="away",
+            event_type="double",
+            player_name="User Batter",
+            is_plate_appearance=True,
+            is_hit=True,
+            hit_bases=2,
+        )
+        self.insert_event(
+            game_id="game-2",
+            source_index=2,
+            batting_side="away",
+            event_type="fielders_choice",
+            player_name="User Batter",
+            is_plate_appearance=True,
+        )
+        self.insert_event(
+            game_id="game-2",
+            source_index=3,
+            batting_side="home",
+            event_type="single",
+            player_name="Beta Batter",
+            is_plate_appearance=True,
+            is_hit=True,
+            hit_bases=1,
+        )
+
+        # Unknown-side events are intentionally excluded.
+        self.insert_event(
+            game_id="game-2",
+            source_index=4,
+            batting_side="unknown",
+            event_type="home_run",
+            player_name="Ghost Batter",
+            is_plate_appearance=True,
+            is_hit=True,
+            hit_bases=4,
+        )
+
+        self.conn.commit()
+
+        report = get_player_event_analytics(
+            self.conn,
+            USERNAME,
+            limit=20,
+        )
+
+        self.assertEqual(
+            report["games_included"],
+            2,
+        )
+
+        self.assertEqual(
+            len(report["user_players"]),
+            1,
+        )
+
+        user = report[
+            "user_players"
+        ][0]
+
+        self.assertEqual(
+            user["player_name"],
+            "User Batter",
+        )
+        self.assertEqual(
+            user["team_name"],
+            "Configured Team",
+        )
+        self.assertEqual(
+            user["games"],
+            2,
+        )
+        self.assertEqual(
+            user["plate_appearances"],
+            6,
+        )
+        self.assertEqual(
+            user["at_bats"],
+            4,
+        )
+        self.assertEqual(
+            user["hits"],
+            2,
+        )
+        self.assertEqual(
+            user["singles"],
+            1,
+        )
+        self.assertEqual(
+            user["doubles"],
+            1,
+        )
+        self.assertEqual(
+            user["walks"],
+            1,
+        )
+        self.assertEqual(
+            user["intentional_walks"],
+            1,
+        )
+        self.assertEqual(
+            user["strikeouts"],
+            1,
+        )
+        self.assertEqual(
+            user["sacrifice_flies"],
+            1,
+        )
+        self.assertEqual(
+            user["runs"],
+            1,
+        )
+        self.assertEqual(
+            user["stolen_bases"],
+            1,
+        )
+        self.assertEqual(
+            user["batting_average"],
+            0.5,
+        )
+        self.assertEqual(
+            user["walk_pct"],
+            16.7,
+        )
+        self.assertEqual(
+            user["strikeout_pct"],
+            16.7,
+        )
+        self.assertEqual(
+            user["home_run_pct"],
+            0.0,
+        )
+
+        opponents = report[
+            "opponent_players"
+        ]
+
+        self.assertEqual(
+            [
+                player["player_name"]
+                for player in opponents
+            ],
+            [
+                "Opponent Slugger",
+                "Beta Batter",
+            ],
+        )
+
+        slugger = opponents[0]
+
+        self.assertEqual(
+            slugger["plate_appearances"],
+            2,
+        )
+        self.assertEqual(
+            slugger["at_bats"],
+            1,
+        )
+        self.assertEqual(
+            slugger["hits"],
+            1,
+        )
+        self.assertEqual(
+            slugger["home_runs"],
+            1,
+        )
+        self.assertEqual(
+            slugger["hit_by_pitch"],
+            1,
+        )
+        self.assertEqual(
+            slugger["caught_stealing"],
+            1,
+        )
+        self.assertEqual(
+            slugger["batting_average"],
+            1.0,
+        )
+        self.assertEqual(
+            slugger["home_run_pct"],
+            50.0,
+        )
+
+        all_names = {
+            player["player_name"]
+            for player in (
+                report["user_players"]
+                + report[
+                    "opponent_players"
+                ]
+            )
+        }
+
+        self.assertNotIn(
+            "Some Pitcher",
+            all_names,
+        )
+        self.assertNotIn(
+            "Ghost Batter",
+            all_names,
+        )
+
+    def test_player_identity_ignores_team_rename_but_respects_opponent_account(
+        self,
+    ):
+        self.insert_game(
+            game_id="alpha-1",
+            display_date=(
+                "2026-02-01 12:00:00"
+            ),
+            user_is_home=True,
+            opponent_name="AlphaUser",
+            opponent_team_name="Old Alpha",
+        )
+        self.insert_event(
+            game_id="alpha-1",
+            source_index=1,
+            batting_side="away",
+            event_type="single",
+            player_name="Jones",
+            is_plate_appearance=True,
+            is_hit=True,
+            hit_bases=1,
+        )
+
+        self.insert_game(
+            game_id="alpha-2",
+            display_date=(
+                "2026-02-02 12:00:00"
+            ),
+            user_is_home=False,
+            opponent_name="AlphaUser",
+            opponent_team_name="New Alpha",
+        )
+        self.insert_event(
+            game_id="alpha-2",
+            source_index=1,
+            batting_side="home",
+            event_type="home_run",
+            player_name="JONES",
+            is_plate_appearance=True,
+            is_hit=True,
+            hit_bases=4,
+        )
+
+        self.insert_game(
+            game_id="beta-1",
+            display_date=(
+                "2026-02-03 12:00:00"
+            ),
+            user_is_home=True,
+            opponent_name="BetaUser",
+            opponent_team_name="Beta Team",
+        )
+        self.insert_event(
+            game_id="beta-1",
+            source_index=1,
+            batting_side="away",
+            event_type="double",
+            player_name="Jones",
+            is_plate_appearance=True,
+            is_hit=True,
+            hit_bases=2,
+        )
+
+        self.conn.commit()
+
+        report = get_player_event_analytics(
+            self.conn,
+            USERNAME,
+            limit=20,
+        )
+
+        self.assertEqual(
+            len(
+                report[
+                    "opponent_players"
+                ]
+            ),
+            2,
+        )
+
+        by_opponent = {
+            row["opponent_name"]: row
+            for row in report[
+                "opponent_players"
+            ]
+        }
+
+        alpha = by_opponent[
+            "AlphaUser"
+        ]
+
+        self.assertEqual(
+            alpha["games"],
+            2,
+        )
+        self.assertEqual(
+            alpha[
+                "plate_appearances"
+            ],
+            2,
+        )
+        self.assertEqual(
+            alpha["hits"],
+            2,
+        )
+        self.assertEqual(
+            alpha["singles"],
+            1,
+        )
+        self.assertEqual(
+            alpha["home_runs"],
+            1,
+        )
+
+        beta = by_opponent[
+            "BetaUser"
+        ]
+
+        self.assertEqual(
+            beta["games"],
+            1,
+        )
+        self.assertEqual(
+            beta["hits"],
+            1,
+        )
+        self.assertEqual(
+            beta["doubles"],
+            1,
+        )
+
+    def test_empty_database_returns_empty_player_lists(
+        self,
+    ):
+        report = get_player_event_analytics(
+            self.conn,
+            USERNAME,
+            limit=20,
+        )
+
+        self.assertEqual(
+            report,
+            {
+                "games_included": 0,
+                "user_players": [],
+                "opponent_players": [],
+            },
         )
 
 

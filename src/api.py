@@ -9,7 +9,10 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .analytics import get_scouting_trends
+from .analytics import (
+    get_player_event_analytics,
+    get_scouting_trends,
+)
 from .collector import (
     backfill_missing_pitching_outs,
     sync_game_history,
@@ -866,6 +869,27 @@ def get_analytics_trends(
         USERNAME,
         limit=limit,
     )
+
+
+@app.get("/analytics/players")
+def get_analytics_players(
+    limit: int = Query(
+        default=20,
+        ge=1,
+        le=200,
+    ),
+    conn: sqlite3.Connection = Depends(
+        get_conn
+    ),
+) -> Dict[str, Any]:
+    return {
+        "limit": limit,
+        **get_player_event_analytics(
+            conn,
+            USERNAME,
+            limit=limit,
+        ),
+    }
 
 
 @app.get("/opponents")

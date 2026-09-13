@@ -578,6 +578,184 @@ class ApiRouteIntegrationTests(unittest.TestCase):
             },
         )
 
+    def test_player_analytics_route_returns_normalized_event_stats(
+        self,
+    ):
+        self.insert_game(
+            game_id="player-analytics-1",
+            display_date=(
+                "2026-03-01 12:00:00"
+            ),
+            opponent_name="OpponentOne",
+            opponent_team_name="Team One",
+            result="W",
+            user_is_home=True,
+            user_runs=5,
+            opponent_runs=2,
+        )
+
+        conn = connect_db(self.db_path)
+        init_db(conn)
+
+        conn.executemany(
+            """
+            INSERT INTO game_events (
+                game_id,
+                source_index,
+                inning,
+                batting_side,
+                batting_team_name,
+                event_type,
+                player_name,
+                raw_text,
+                is_plate_appearance,
+                is_hit,
+                hit_bases,
+                cause
+            )
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+            """,
+            [
+                (
+                    "player-analytics-1",
+                    1,
+                    1,
+                    "home",
+                    "Configured Team",
+                    "single",
+                    "User Batter",
+                    "User Batter singled.",
+                    1,
+                    1,
+                    1,
+                    None,
+                ),
+                (
+                    "player-analytics-1",
+                    2,
+                    1,
+                    "home",
+                    "Configured Team",
+                    "walk",
+                    "User Batter",
+                    "User Batter walked.",
+                    1,
+                    0,
+                    None,
+                    None,
+                ),
+                (
+                    "player-analytics-1",
+                    3,
+                    1,
+                    "away",
+                    "Team One",
+                    "home_run",
+                    "Opponent Slugger",
+                    "Opponent Slugger homered.",
+                    1,
+                    1,
+                    4,
+                    None,
+                ),
+            ],
+        )
+
+        conn.commit()
+        conn.close()
+
+        response = self.client.get(
+            "/analytics/players",
+            params={
+                "limit": 1,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        payload = response.json()
+
+        self.assertEqual(
+            payload["limit"],
+            1,
+        )
+        self.assertEqual(
+            payload["games_included"],
+            1,
+        )
+
+        self.assertEqual(
+            len(payload["user_players"]),
+            1,
+        )
+        self.assertEqual(
+            len(
+                payload[
+                    "opponent_players"
+                ]
+            ),
+            1,
+        )
+
+        user = payload[
+            "user_players"
+        ][0]
+
+        self.assertEqual(
+            user["player_name"],
+            "User Batter",
+        )
+        self.assertEqual(
+            user["plate_appearances"],
+            2,
+        )
+        self.assertEqual(
+            user["at_bats"],
+            1,
+        )
+        self.assertEqual(
+            user["hits"],
+            1,
+        )
+        self.assertEqual(
+            user["walks"],
+            1,
+        )
+        self.assertEqual(
+            user["batting_average"],
+            1.0,
+        )
+        self.assertEqual(
+            user["walk_pct"],
+            50.0,
+        )
+
+        opponent = payload[
+            "opponent_players"
+        ][0]
+
+        self.assertEqual(
+            opponent["opponent_name"],
+            "OpponentOne",
+        )
+        self.assertEqual(
+            opponent["player_name"],
+            "Opponent Slugger",
+        )
+        self.assertEqual(
+            opponent["home_runs"],
+            1,
+        )
+        self.assertEqual(
+            opponent["home_run_pct"],
+            100.0,
+        )
+
     def test_dashboard_route_returns_counts_and_record(self):
         self.insert_game(
             game_id="dash-1",
